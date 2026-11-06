@@ -26,12 +26,14 @@ Open the live demo, choose **Sign in**, and use the one-click demo accounts. No 
 
 The **Live wall** (no sign-in) shows bills being cleared around the world. Every number on it is counted from transactions recorded by the app; nothing is pre-filled.
 
-Payment approval: on the hosted demo, until PayPal sandbox credentials are configured, payments run against the built-in PayPal fake and a neutral "sandbox payment simulator" window stands in for the PayPal login. With sandbox credentials the official PayPal buttons appear and you log in with the sandbox buyer below.
+Payments run in the real PayPal sandbox. When the PayPal window opens, log in with one of these sandbox test buyers (sandbox test accounts with play money, created for judges; no real money):
 
-| Sandbox buyer (for the PayPal popup) | |
-|---|---|
-| Email | (added when the sandbox accounts are created) |
-| Password | (added when the sandbox accounts are created) |
+| Sandbox buyer | Email | Password |
+|---|---|---|
+| Sponsor (5,000 USD balance) | `billkind-sponsor@personal.example.com` | `BkbbDm2qs7lh7!` |
+| Second sponsor (2,000 USD balance) | `billkind-sponsor2@personal.example.com` | `BkAV7o8n8nq97!` |
+
+Billers are paid into a sandbox business account (`billkind-biller@business.example.com`) that stands in for every demo biller. Without credentials (for example a fresh local clone), Billkind falls back to its built-in PayPal fake, where a neutral "sandbox payment simulator" window stands in for the PayPal login.
 
 Suggested path for judges: sign in as Poster in one browser window and post the fresh sample bill. Sign in as Sponsor in a private window, swipe right on that bill and pay. Watch the PAID stamp appear in both windows, then send a thank-you as the poster and watch it reach the sponsor.
 
@@ -98,9 +100,9 @@ Guardrails that live in code, not prompts:
 
 | Real | Simulated or limited |
 |---|---|
-| Every PayPal call listed above, against the PayPal sandbox when credentials are set | Until sandbox credentials are configured, the hosted demo uses the built-in PayPal fake ([app/paypal/fake.py](app/paypal/fake.py)) with the same endpoints, payload shapes, signed webhooks and error codes |
+| Every PayPal call listed above runs against the real PayPal sandbox on the hosted demo, including real webhooks verified with PayPal's certificate | A local clone without credentials uses the built-in PayPal fake ([app/paypal/fake.py](app/paypal/fake.py)) with the same endpoints, payload shapes, signed webhooks and error codes |
 | AI extraction, fraud checks, notes, agent decisions and support answers from live model calls | Seeded open bills and billers are fictional demo data; nothing is pre-paid |
-| Payment state machine, refunds, payouts, webhooks, live updates | Billers are sandbox business accounts; real billers would need onboarding and verification |
+| Payment state machine, refunds, payouts, webhooks, live updates | One sandbox business account receives payouts for every demo biller; real billers would need onboarding and verification |
 | Live wall counts from the database | Exchange rates for display and non-PayPal currencies are indicative and fixed (dated in the UI) |
 | | No email is sent; receipts and notices live in the in-app inbox |
 
@@ -121,8 +123,8 @@ Open http://localhost:8800. Without a Groq key the non-AI fallbacks run; without
 
 ### Use the real PayPal sandbox
 
-1. On developer.paypal.com, create a sandbox app with Accept payments, Vault (Advanced options, save payment methods), Payouts and Transaction search enabled.
-2. Create sandbox accounts: a Business account for billers (receives payouts) and a Personal account for sponsors.
+1. On developer.paypal.com, create sandbox accounts in a region where Payouts is available (US works; India-region business accounts get `PAYOUT_NOT_AVAILABLE`): a Business account for the platform, a Business account for billers and a Personal account for sponsors.
+2. Create a sandbox REST app linked to the platform business account with Accept payments, Save payment methods (Vault), Payouts and Transaction search enabled.
 3. Set in `.env`: `PAYPAL_MODE=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `BILLER_SANDBOX_EMAIL` (the biller business account), then reseed.
 4. Add a webhook pointing at `https://<your host>/webhooks/paypal` with the events listed above, and set `PAYPAL_WEBHOOK_ID`.
 
@@ -134,7 +136,7 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 .venv/bin/python -m pytest -q
 ```
 
-44 tests run in about 6 seconds against a real HTTP server and the PayPal fake. They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, monthly sponsorship, support grounding and escalation, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` runs the approval-free contract steps against the real sandbox.
+45 tests run in about 6 seconds against a real HTTP server and the PayPal fake. They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, monthly sponsorship, support grounding and escalation, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
 
 ### Deploy
 
