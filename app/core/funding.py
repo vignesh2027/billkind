@@ -144,8 +144,11 @@ async def capture(order_id: str, sponsor: dict) -> dict:
     o = db.one("SELECT * FROM orders WHERE order_id = ?", (order_id,))
     if not o or o["sponsor_id"] != sponsor["id"]:
         raise FundingError("unknown order")
-    if o["status"] == "COMPLETED":
-        return {"status": "COMPLETED", "already": True}
+    if o["status"] == "COMPLETED":  # already captured (for example by the CHECKOUT.ORDER.APPROVED webhook)
+        rows = db.q("SELECT c.capture_id, b.id, b.status FROM contributions c JOIN bills b ON b.id = c.bill_id "
+                    "WHERE c.order_id = ?", (order_id,))
+        return {"status": "COMPLETED", "already": True, "capture_id": rows[0]["capture_id"] if rows else "",
+                "funded": [r["id"] for r in rows if r["status"] in ("FUNDED", "PAYOUT_SENT", "PAID")]}
     try:
         resp = await client().capture_order(order_id)
     except PayPalError as exc:

@@ -7,6 +7,7 @@ two readings can be cross-checked for the fraud model.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import hashlib
 import io
@@ -152,9 +153,12 @@ def parse_date(text: str) -> str | None:
 
 
 def parse_account(text: str) -> str | None:
-    m = re.search(r"(account|acct|consumer|customer|student|patient|meter|tenant|ref(?:erence)?)\s*"
-                  r"(?:no\.?|number|id|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{3,24})", text, re.I)
-    return m.group(2) if m else None
+    for m in re.finditer(r"(account|acct|consumer|customer|student|patient|meter|tenant|ref(?:erence)?)\s*"
+                         r"(?:no\.?|number|id|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\- /]{3,24})", text, re.I):
+        value = m.group(2).strip()
+        if any(ch.isdigit() for ch in value):  # skip labels such as "Student name"
+            return value
+    return None
 
 
 def parse_category(text: str) -> str:
@@ -238,7 +242,16 @@ async def extract(doc: Doc) -> dict:
     ocr = regex_extract(doc.text) if doc.text else {}
     ai = None
     if doc.kind == "image" and doc.image:
-        ai = await llm.vision_json(PROMPT, doc.image, doc.mime, kind="bill-vision")
+        # The vision model reads the photo; in parallel a text model reads the OCR text, which is used
+        # if the vision model is slow or unavailable.
+        vision = asyncio.create_task(llm.vision_json(PROMPT, doc.image, doc.mime, kind="bill-vision"))
+        text_task = (asyncio.create_task(llm.chat_json(PROMPT, "Bill text:\n" + doc.text[:6000], kind="bill-text"))
+                     if doc.text.strip() else None)
+        ai = await vision
+        if ai is None and text_task is not None:
+            ai = await text_task
+        elif text_task is not None:
+            text_task.cancel()
     elif doc.text.strip():
         ai = await llm.chat_json(PROMPT, "Bill text:\n" + doc.text[:6000], kind="bill-text")
     if ai:

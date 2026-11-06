@@ -153,6 +153,11 @@
       document.querySelector('[data-step=funded]').className = 'now';
     }
     if (current) { const c = current; current = null; setTimeout(() => fling(c, 1), 200); }
+    // Catch up on anything that happened before the live stream saw it.
+    fetch('/api/bills/' + orderBill).then(r => r.json()).then(b => {
+      if (b.status === 'PAYOUT_SENT') mark('payout_sent');
+      if (b.status === 'PAID') mark('paid');
+    });
   }
   function mark(step) {
     const order = ['captured', 'funded', 'payout_sent', 'paid', 'thanks'];

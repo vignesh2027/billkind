@@ -199,3 +199,10 @@ td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .reason { display: flex; gap: 10px; font-size: 14px; padding: 6px 0; }
 .reason b { flex: none; width: 34px; color: var(--danger); }
 .toast { position: fixed; right: 16px; bottom: 16px; z-index: 60; background: var(--text); color: #fff; padding: 12px 16px; border-radius: 14px; box-shadow: var(--shadow-lg); max-width: 360px; font-size: 14px; animation: up .3s ease; }
+
+.path { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 12px; font-weight: 700; }
+.path span { background: #EEF3FB; border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+.path span.to { background: var(--accent-soft); color: var(--accent); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.path i { flex: 1; height: 2px; min-width: 14px; background: repeating-linear-gradient(90deg, #B8C8E4 0 6px, transparent 6px 10px); }
+.never { font-size: 12px; color: var(--muted); margin-top: 6px; text-align: right; }
+.fan .path, .fan .never { display: none; }

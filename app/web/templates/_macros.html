@@ -22,7 +22,7 @@
     {% if c.urgent %}<span class="pill danger">{{ c.due }}</span>{% else %}<span class="pill grey">{{ c.due }}</span>{% endif %}
   </div>
   <div class="amount">{{ c.amount }}</div>
-  <div class="conv">{% if c.amount_mine %}about {{ c.amount_mine }}{% endif %}{% if c.settle_currency != c.currency %} &middot; settles as {{ c.settle_amount }}{% endif %}</div>
+  <div class="conv">{% if c.amount_mine %}about {{ c.amount_mine }}{% endif %}{% if c.settle_currency != c.currency and c.settle_amount != c.amount_mine %} &middot; settles as {{ c.settle_amount }}{% endif %}</div>
   <div class="biller">Paid to {{ c.biller }} {% if c.biller_verified %}<span class="verified">{{ check() }} verified biller</span>{% endif %}</div>
   {% if c.story %}<p class="story">{{ c.story }}</p>{% endif %}
   <div class="meta">
@@ -32,5 +32,7 @@
   </div>
   <div class="bar" aria-label="{{ c.funded_pct }} percent funded"><span style="width: {{ c.funded_pct }}%"></span></div>
   <div class="spread" style="margin-top:8px;font-size:13px"><span class="muted">{{ c.funded }} of {{ c.settle_amount }} funded</span>{% if c.left %}<strong>{{ c.left }} to go</strong>{% endif %}</div>
+  <div class="path" aria-label="Money path: you, PayPal, then {{ c.biller }}. Never the person."><span>You</span><i></i><span>PayPal</span><i></i><span class="to">{{ c.biller }}</span></div>
+  <div class="never">Paid to the biller, never to the person</div>
 </article>
 {%- endmacro %}

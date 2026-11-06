@@ -7,6 +7,7 @@ itsdangerous==2.2.0
 pypdf==6.21.4
 pillow==13.0.0
 cryptography==50.0.2
+paypal-server-sdk==2.4.0
 requests==2.34.2
 pytest==9.2.0
 # Installed separately with --no-deps (its core needs only requests and pydantic):

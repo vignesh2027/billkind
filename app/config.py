@@ -38,6 +38,7 @@ class Settings:
     paypal_client_id: str = field(default_factory=lambda: _env("PAYPAL_CLIENT_ID"))
     paypal_client_secret: str = field(default_factory=lambda: _env("PAYPAL_CLIENT_SECRET"))
     paypal_base_url_env: str = field(default_factory=lambda: _env("PAYPAL_BASE_URL"))
+    paypal_sdk: str = field(default_factory=lambda: _env("PAYPAL_SDK", "apimatic"))  # apimatic or rest
     paypal_webhook_id: str = field(default_factory=lambda: _env("PAYPAL_WEBHOOK_ID"))
     groq_api_key: str = field(default_factory=lambda: _env("GROQ_API_KEY"))
     ai_text_model: str = field(default_factory=lambda: _env("AI_TEXT_MODEL", "openai/gpt-oss-120b"))

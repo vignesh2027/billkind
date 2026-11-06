@@ -42,7 +42,8 @@ def _parse_json(text: str) -> dict | None:
 
 
 async def chat(messages: list[dict], *, model: str | None = None, json_mode: bool = False,
-               max_tokens: int = 900, temperature: float = 0.2, kind: str = "chat") -> str | None:
+               max_tokens: int = 900, temperature: float = 0.2, kind: str = "chat",
+               timeout: float = 45) -> str | None:
     if not settings.ai_enabled:
         return None
     model = model or settings.ai_text_model
@@ -55,7 +56,7 @@ async def chat(messages: list[dict], *, model: str | None = None, json_mode: boo
     import time
     t0 = time.time()
     try:
-        async with httpx.AsyncClient(timeout=45) as h:
+        async with httpx.AsyncClient(timeout=timeout) as h:
             r = await h.post(URL, json=body, headers={"Authorization": f"Bearer {settings.groq_api_key}"})
         ok = r.status_code == 200
         _record(kind, model, ok, int((time.time() - t0) * 1000))
@@ -113,5 +114,5 @@ async def vision_json(prompt: str, image: bytes, mime: str, *, kind: str = "visi
     text = await chat([{"role": "user", "content": [
         {"type": "text", "text": prompt},
         {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-    ]}], model=settings.ai_vision_model, max_tokens=900, kind=kind)
+    ]}], model=settings.ai_vision_model, max_tokens=900, kind=kind, timeout=14)
     return _parse_json(text) if text else None
