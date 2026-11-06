@@ -8,7 +8,7 @@
   <div class="panel"><div class="kpi counter" id="k-sponsors">{{ stats.sponsors }}</div><div class="kpi-label">sponsors</div></div>
   <div class="panel"><div class="kpi" style="font-size:20px;line-height:1.3" id="k-totals">{{ stats.totals|join(' · ') or 'Nothing yet' }}</div><div class="kpi-label">paid to billers</div></div>
 </div>
-<div class="grid" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+<div class="grid live-grid" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start">
   <div class="panel" style="padding:14px">
     <svg class="map" id="map" viewBox="0 0 1000 440" role="img" aria-label="World map of bills: violet dots are cleared bills, blue dots are open bills">
       <g transform="translate(0,-20)">

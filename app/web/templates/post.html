@@ -21,8 +21,11 @@
         <li>Sponsors pay the biller directly. You never handle the money, and nobody sees your name or account number.</li>
       </ol>
     </div>
-    {% if samples %}<div class="panel flat"><h3>Sample bills for testing</h3><p class="muted" style="font-size:14px">Download one and upload it above.</p>
-      <div class="row">{% for s in samples %}<a class="pill" href="/samples/{{ s }}" download>{{ s }}</a>{% endfor %}</div></div>{% endif %}
+    <div class="panel flat"><h3>Sample bills for testing</h3>
+      <p class="muted" style="font-size:14px">All billers and people on these samples are fictional. Download one, then upload it above.</p>
+      <p><a class="btn small" href="/samples/fresh-school-bill.jpg" download>Download a fresh sample school bill</a></p>
+      <p class="hint">Each download is unique, so it passes the duplicate check. The fixed samples below are useful for testing the checks: once someone has posted one, posting the same file again is refused as a duplicate, and the edited clinic bill is held for review.</p>
+      <div class="row">{% for s in samples %}<a class="pill" href="/samples/{{ s }}" download>{{ s }}</a>{% endfor %}</div></div>
   </div>
 </div>
 {% endblock %}

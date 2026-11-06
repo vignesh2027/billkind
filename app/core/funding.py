@@ -34,6 +34,10 @@ class FundingError(Exception):
     pass
 
 
+def _cat(bill: dict) -> str:
+    return bill["category"].replace("_", " ")
+
+
 # Reads ---------------------------------------------------------------------------------
 
 def get_bill(bill_id: str) -> dict:
@@ -176,7 +180,7 @@ async def record_capture(order: dict) -> dict:
                                      captured_at=db.now())
                     bill = get_bill(c["bill_id"])
                     events.publish("funded", f"{fmt(c['amount_minor'], c['currency'])} toward a "
-                                   f"{bill['category']} bill in {bill['city'] or bill['country']}",
+                                   f"{_cat(bill)} bill in {bill['city'] or bill['country']}",
                                    bill=bill, amount_minor=c["amount_minor"], currency=c["currency"],
                                    ref=c["id"])
             db.update("orders", "order_id", oid, status="COMPLETED", captured_at=db.now())
@@ -215,7 +219,7 @@ async def _after_change(bill_id: str) -> dict | None:
         if excess > 0:
             await _refund_excess(bill, excess)
         bill = set_status(bill, "FUNDED", funded_minor=bill["settle_minor"])
-        events.publish("fully_funded", f"A {bill['category']} bill in {bill['city'] or bill['country']} "
+        events.publish("fully_funded", f"A {_cat(bill)} bill in {bill['city'] or bill['country']} "
                        f"is fully funded", bill=bill, amount_minor=bill["settle_minor"],
                        currency=bill["settle_currency"])
     return bill
@@ -253,7 +257,7 @@ async def refund_contribution(c: dict, amount_minor: int | None, reason: str) ->
     bill = get_bill(c["bill_id"])
     db.update("bills", "id", bill["id"], funded_minor=captured_net(bill["id"]))
     notify.send(c["sponsor_id"], "refund", f"Refund of {fmt(amount, c['currency'])} is on its way",
-                f"{reason}\n\nBill {bill['id']} ({bill['category']}, {bill['city'] or bill['country']}). "
+                f"{reason}\n\nBill {bill['id']} ({_cat(bill)}, {bill['city'] or bill['country']}). "
                 f"PayPal capture {c['capture_id']}. Refunds usually show in your PayPal account within minutes "
                 f"in the sandbox.", bill_id=bill["id"], contribution_id=c["id"])
     events.publish("refund", f"Refunded {fmt(amount, c['currency'])}", bill=bill, amount_minor=amount,
@@ -282,7 +286,7 @@ async def withdraw(bill_id: str, reason: str, by_admin: bool = False) -> dict:
         bill = set_status(get_bill(bill_id), "WITHDRAWN", reject_reason=reason)
     notify.send(bill["poster_id"], "notice", f"Bill {bill_id} withdrawn",
                 f"{reason}\n\n{n} sponsor payment(s) were refunded in full.", bill_id=bill_id)
-    events.publish("withdrawn", f"A {bill['category']} bill was withdrawn and its sponsors refunded",
+    events.publish("withdrawn", f"A {_cat(bill)} bill was withdrawn and its sponsors refunded",
                    bill=bill, public=False, audience=[bill["poster_id"]])
     return bill
 
@@ -312,7 +316,7 @@ def expire_reservations() -> int:
 
 def _note(bill: dict) -> str:
     return (f"Billkind bill {bill['id']}: please apply to account {bill['account_private'] or bill['account_masked']} "
-            f"({bill['category']}, due {bill['due_date']}). Paid on behalf of your customer by Billkind sponsors.")
+            f"({_cat(bill)}, due {bill['due_date']}). Paid on behalf of your customer by Billkind sponsors.")
 
 
 async def send_payouts(bills: list[dict]) -> str | None:
@@ -354,7 +358,7 @@ async def send_payouts(bills: list[dict]) -> str | None:
                                    "receiver": biller["paypal_email"], "status": "PENDING",
                                    "created_at": db.now(), "updated_at": db.now()})
         set_status(bill, "PAYOUT_SENT", payout_batch_id=batch_id)
-        events.publish("payout_sent", f"Paying {biller['name']} for a {bill['category']} bill in "
+        events.publish("payout_sent", f"Paying {biller['name']} for a {_cat(bill)} bill in "
                        f"{bill['city'] or bill['country']}", bill=bill, amount_minor=bill["settle_minor"],
                        currency=bill["settle_currency"], ref=sid)
     return batch_id
@@ -388,7 +392,7 @@ async def apply_payout_item(resource: dict) -> str:
         _admin_notice(f"Payout {status} for bill {bill['id']}",
                       f"The payout to the biller ended {status}. Retry after checking the biller account, "
                       f"or refund the sponsors.")
-        events.publish("payout_failed", f"Payout for a {bill['category']} bill needs attention", bill=bill,
+        events.publish("payout_failed", f"Payout for a {_cat(bill)} bill needs attention", bill=bill,
                        public=False, audience=_sponsors(bill["id"]) + [bill["poster_id"]])
     return status
 
@@ -409,11 +413,11 @@ def _on_paid(bill: dict) -> None:
                   (bill["id"],)):
         net = c["amount_minor"] - c["refunded_minor"]
         notify.send(c["sponsor_id"], "receipt", f"Receipt: {bill['biller_name']} was paid",
-                    f"Your {fmt(net, c['currency'])} helped pay a {bill['category']} bill in {where}.\n"
+                    f"Your {fmt(net, c['currency'])} helped pay a {_cat(bill)} bill in {where}.\n"
                     f"The biller {bill['biller_name']} received {fmt(bill['settle_minor'], bill['settle_currency'])} "
                     f"for account {bill['account_masked']}.\nPayPal order {c['order_id']}, capture {c['capture_id']}, "
                     f"payout item {bill['payout_item_id']}.", bill_id=bill["id"], contribution_id=c["id"])
-    notify.send(bill["poster_id"], "paid", f"Your {bill['category']} bill is paid",
+    notify.send(bill["poster_id"], "paid", f"Your {_cat(bill)} bill is paid",
                 f"{bill['biller_name']} has received {fmt(bill['settle_minor'], bill['settle_currency'])} for your "
                 f"account {bill['account_masked']}. Would you like to send your sponsors a thank-you?",
                 bill_id=bill["id"])
@@ -421,8 +425,8 @@ def _on_paid(bill: dict) -> None:
     if biller and biller["user_id"]:
         notify.send(biller["user_id"], "payout", f"Payment received for account {bill['account_masked']}",
                     f"{fmt(bill['settle_minor'], bill['settle_currency'])} for bill {bill['id']} "
-                    f"({bill['category']}). Payout item {bill['payout_item_id']}.", bill_id=bill["id"])
-    events.publish("paid", f"{bill['biller_name']} was paid: a {bill['category']} bill in {where} is cleared",
+                    f"({_cat(bill)}). Payout item {bill['payout_item_id']}.", bill_id=bill["id"])
+    events.publish("paid", f"{bill['biller_name']} was paid: a {_cat(bill)} bill in {where} is cleared",
                    bill=bill, amount_minor=bill["settle_minor"], currency=bill["settle_currency"],
                    audience=_sponsors(bill["id"]) + [bill["poster_id"]], ref=bill["payout_item_id"])
 

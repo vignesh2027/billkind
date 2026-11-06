@@ -154,12 +154,28 @@ async def login(request: Request, email: str = Form(...), password: str = Form("
                    (demo == "1" and email.endswith("@billkind.demo")))
     if not ok:
         return render(request, "login.html", next=next, demo=DEMO_ACCOUNTS, error="Email or password is not right.")
+    resp_cookie = None
+    if demo == "1" and user["email"] == "poster@billkind.demo":
+        # Each browser gets its own demo poster account, so testers do not trip each other's velocity limits.
+        own = request.cookies.get("bk_demo_poster", "")
+        mine = db.one("SELECT * FROM users WHERE id = ? AND role = 'poster'", (own,)) if own else None
+        if not mine:
+            uid = db.new_id("U-DEMO")
+            db.insert("users", {"id": uid, "email": f"poster+{uid[-6:].lower()}@billkind.demo", "name": "Kavya Raman",
+                                "role": "poster", "password_hash": user["password_hash"], "country": "IN",
+                                "currency": "INR", "prefs": "{}", "created_at": db.now()})
+            mine = db.one("SELECT * FROM users WHERE id = ?", (uid,))
+            resp_cookie = uid
+        user = mine
     request.session["uid"] = user["id"]
     if not next.startswith("/") or next.startswith("//"):
         next = "/"
     if next == "/":
         next = {"sponsor": "/deck", "poster": "/me", "admin": "/admin", "biller": "/biller"}.get(user["role"], "/")
-    return RedirectResponse(next, status_code=303)
+    resp = RedirectResponse(next, status_code=303)
+    if resp_cookie:
+        resp.set_cookie("bk_demo_poster", resp_cookie, max_age=60 * 86400, httponly=True, samesite="lax")
+    return resp
 
 
 @app.post("/logout")
@@ -195,6 +211,15 @@ async def post_upload(request: Request, file: UploadFile = File(...), csrf: str 
     except posting.PostingError as exc:
         return render(request, "post.html", error=str(exc), samples=[])
     return RedirectResponse(f"/post/{bill['id']}", status_code=303)
+
+
+@app.get("/samples/fresh-school-bill.jpg")
+async def fresh_sample():
+    from fastapi.responses import Response
+    from scripts.make_samples import fresh_sample as make
+    data = await asyncio.to_thread(make)
+    return Response(data, media_type="image/jpeg",
+                    headers={"Content-Disposition": "attachment; filename=fresh-school-bill.jpg"})
 
 
 @app.get("/samples/{name}")

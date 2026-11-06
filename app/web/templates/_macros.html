@@ -19,10 +19,11 @@
   {% if c.paid %}<span class="stamp">PAID</span>{% endif %}
   <div class="top">
     <div class="row">{{ icon(c.category) }}<div><div class="where">{{ c.city ~ ', ' if c.city }}{{ c.country_name }}</div><strong>{{ c.category_label }}</strong></div></div>
-    {% if c.urgent %}<span class="pill danger">{{ c.due }}</span>{% else %}<span class="pill grey">{{ c.due }}</span>{% endif %}
+    {% if c.paid %}{% elif c.urgent %}<span class="pill danger">{{ c.due }}</span>{% else %}<span class="pill grey">{{ c.due }}</span>{% endif %}
   </div>
   <div class="amount">{{ c.amount }}</div>
-  <div class="conv">{% if c.amount_mine %}about {{ c.amount_mine }}{% endif %}{% if c.settle_currency != c.currency and c.settle_amount != c.amount_mine %} &middot; settles as {{ c.settle_amount }}{% endif %}</div>
+  {% set conv = [] %}{% if c.amount_mine %}{% set _ = conv.append('about ' ~ c.amount_mine) %}{% endif %}{% if c.settle_currency != c.currency and c.settle_amount != c.amount_mine %}{% set _ = conv.append('settles as ' ~ c.settle_amount) %}{% endif %}
+  <div class="conv">{{ conv|join(' · ') }}</div>
   <div class="biller">Paid to {{ c.biller }} {% if c.biller_verified %}<span class="verified">{{ check() }} verified biller</span>{% endif %}</div>
   {% if c.story %}<p class="story">{{ c.story }}</p>{% endif %}
   <div class="meta">

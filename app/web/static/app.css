@@ -206,3 +206,14 @@ td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .path i { flex: 1; height: 2px; min-width: 14px; background: repeating-linear-gradient(90deg, #B8C8E4 0 6px, transparent 6px 10px); }
 .never { font-size: 12px; color: var(--muted); margin-top: 6px; text-align: right; }
 .fan .path, .fan .never { display: none; }
+@media (max-width: 860px) { .live-grid, .deck-wrap aside { grid-template-columns: 1fr !important; } }
+@media (max-width: 700px) {
+  .nav .wrap { height: auto; flex-wrap: wrap; padding-top: 10px; padding-bottom: 8px; gap: 8px; }
+  .nav nav { width: 100%; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
+  .nav nav a, .nav nav form { flex: none; }
+  .mode { display: none; }
+  .deck { height: 640px; }
+  .bill { padding: 18px; }
+  .bill .amount { font-size: 32px; }
+  .bill .story { font-size: 15px; }
+}

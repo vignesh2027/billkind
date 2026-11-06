@@ -40,6 +40,30 @@ def bill_image(header: str, color: str, lines: list[tuple[str, str]], total: tup
     return img
 
 
+def fresh_sample(seed: int | None = None) -> bytes:
+    """A unique, realistic sample bill for testers (fictional school, fictional student)."""
+    import random
+    rnd = random.Random(seed)
+    today = dt.date.today()
+    due = (today + dt.timedelta(days=rnd.randint(3, 12))).isoformat()
+    tuition = rnd.choice([2400, 2600, 2900, 3100])
+    exam = rnd.choice([250, 300, 350])
+    lib = rnd.choice([150, 200])
+    total = tuition + exam + lib
+    sid = f"SPS-{rnd.randint(1000, 9999)}-{rnd.randint(1000, 9999)}"
+    name = rnd.choice(["Arjun", "Meena", "Ravi", "Lakshmi", "Farah", "Joseph"]) + " " + rnd.choice(
+        ["Kumar", "Iyer", "Thomas", "Begum", "Raj", "Pillai"])
+    img = bill_image("SUNRISE PUBLIC SCHOOL", "#1d4f91", [
+        ("Fee receipt for", "Term 3 (Nov to Jan)"), ("Student name:", name), ("Student ID:", sid),
+        ("Class:", f"Grade {rnd.randint(3, 9)} {rnd.choice('ABC')}"), ("City:", "Chennai, Tamil Nadu"),
+        ("Tuition fee", f"INR {tuition:,}.00"), ("Exam fee", f"INR {exam:,}.00"), ("Library fee", f"INR {lib:,}.00"),
+        ("Due date:", due)], ("Total due", f"INR {total:,}.00"),
+        "Sunrise Public School, fictional sample for testing. Pay by the due date.")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=88)
+    return buf.getvalue()
+
+
 def main() -> None:
     OUT.mkdir(exist_ok=True)
     today = dt.date.today()

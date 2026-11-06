@@ -140,14 +140,18 @@ def assess(*, poster_id: str, bill: dict, extraction: dict, doc_meta: dict, doc_
         r.add(15, "no_due_date", "The due date could not be confirmed.")
 
     # Duplicates
-    same_file = db.one("SELECT id, status FROM bills WHERE doc_sha = ? AND id != ?", (doc_sha, exclude_bill))
+    same_file = db.one("SELECT id, status FROM bills WHERE doc_sha = ? AND id != ? AND status != 'DRAFT'",
+                       (doc_sha, exclude_bill))
     if same_file:
         r.fail("duplicate_file", f"This exact file was already posted as bill {same_file['id']}.")
     if phash and len(phash) == 64:
-        for other in db.q("SELECT id, phash FROM bills WHERE phash != '' AND id != ? AND status NOT IN ('REJECTED')",
-                          (exclude_bill,)):
-            if other["id"] != (same_file or {}).get("id") and hamming(phash, other["phash"]) <= 10:
-                r.add(40, "near_duplicate", f"The image is nearly identical to bill {other['id']}.")
+        # Bills from one biller share a template, so a similar image alone is normal. A re-photographed copy of the
+        # same bill also has the same amount.
+        for other in db.q("SELECT id, phash, amount_minor FROM bills WHERE phash != '' AND id != ? AND status NOT IN "
+                          "('REJECTED','DRAFT')", (exclude_bill,)):
+            if other["id"] != (same_file or {}).get("id") and hamming(phash, other["phash"]) <= 10 \
+                    and other["amount_minor"] == bill["amount_minor"]:
+                r.add(40, "near_duplicate", f"The image is nearly identical to bill {other['id']}, with the same amount.")
                 break
     if account_hash:
         since = db.now() - 60 * 86400
