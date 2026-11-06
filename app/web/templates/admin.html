@@ -28,6 +28,12 @@
   <button class="btn small" name="action" value="retry">Retry payout</button><button class="btn danger small" name="action" value="refund">Refund sponsors</button></form></div>
 {% else %}<p class="muted">None.</p>{% endfor %}
 </div>
+<div class="panel" style="margin-top:18px" id="tickets"><h3>Support tickets</h3>
+{% for t in tickets %}<div class="panel flat" style="margin-top:10px"><div class="spread"><strong>{{ t.id }} &middot; {{ t.subject }}</strong><span class="pill {{ 'ok' if t.status == 'RESOLVED' else 'warn' }}">{{ t.status|lower }}</span></div>
+<div class="muted" style="font-size:12px">{{ t.email }}</div>
+{% for l in t.lines %}<p style="font-size:13px;margin:6px 0"><strong>{{ l.role }}:</strong> {{ l.content }}</p>{% endfor %}
+{% if t.status != 'RESOLVED' %}<form method="post" action="/admin/tickets/{{ t.id }}" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="text" name="reply" placeholder="Reply to the user" required style="flex:1"><button class="btn small">Send reply</button></form>{% else %}<p class="hint">Reply: {{ t.resolution }}</p>{% endif %}</div>
+{% else %}<p class="muted">No tickets.</p>{% endfor %}</div>
 <div class="panel" style="margin-top:18px" id="billers"><h3>Biller registry</h3>
 <div class="table-wrap"><table><thead><tr><th>Biller</th><th>Where</th><th>PayPal account</th><th>Status</th></tr></thead><tbody>
 {% for b in billers %}<tr><td>{{ b.name }}<div class="muted" style="font-size:12px">{{ category_label(b.category) }}</div></td><td>{{ b.city }}, {{ country_name(b.country) }}</td><td class="mono">{{ b.paypal_email }}</td>

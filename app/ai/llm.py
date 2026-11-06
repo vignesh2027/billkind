@@ -74,6 +74,34 @@ async def chat(messages: list[dict], *, model: str | None = None, json_mode: boo
         return None
 
 
+async def chat_raw(messages: list[dict], *, tools: list[dict] | None = None, kind: str = "tools",
+                   max_tokens: int = 700) -> dict | None:
+    """One chat turn with optional tool definitions. Returns the assistant message dict or None."""
+    if not settings.ai_enabled:
+        return None
+    import time
+    model = settings.ai_text_model
+    body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens + 1200, "temperature": 0.1}
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    if "gpt-oss" in model:
+        body["reasoning_effort"] = "low"
+    t0 = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=45) as h:
+            r = await h.post(URL, json=body, headers={"Authorization": f"Bearer {settings.groq_api_key}"})
+        _record(kind, model, r.status_code == 200, int((time.time() - t0) * 1000))
+        if r.status_code != 200:
+            log.warning("AI call %s failed with HTTP %s", kind, r.status_code)
+            return None
+        return r.json()["choices"][0]["message"]
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        _record(kind, model, False, int((time.time() - t0) * 1000))
+        log.warning("AI call %s failed: %s", kind, type(exc).__name__)
+        return None
+
+
 async def chat_json(system: str, user: str, *, kind: str, max_tokens: int = 900) -> dict | None:
     text = await chat([{"role": "system", "content": system}, {"role": "user", "content": user}],
                       json_mode=True, max_tokens=max_tokens, kind=kind)

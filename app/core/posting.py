@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import random
@@ -29,7 +30,7 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
     if len(data) > 8 * 1024 * 1024:
         raise PostingError("Files up to 8 MB, please.")
     try:
-        doc = intake.read_document(data, filename, content_type)
+        doc = await asyncio.to_thread(intake.read_document, data, filename, content_type)
     except Exception as exc:
         raise PostingError("That file could not be opened. Please upload a photo (JPG or PNG) or a PDF.") from exc
     fields = await intake.extract(doc)

@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% block title %}Help · Billkind{% endblock %}
+{% block main %}
+<div class="grid" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start">
+  <div class="panel">
+    <h2>Ask about your bills and payments</h2>
+    <p class="muted" style="font-size:14px">The assistant only reads your own records, Billkind's policies, and PayPal order details for your own orders (through PayPal's Agent Toolkit). It does not guess: anything it cannot confirm goes to a person.</p>
+    <div id="chat" class="stack" style="min-height:160px;margin:14px 0" aria-live="polite"></div>
+    <form id="ask" class="row"><label class="sr-only" for="q">Your question</label>
+      <input id="q" type="text" placeholder="{{ 'Why is my bill in review?' if user.role == 'poster' else 'Did the biller get my money?' }}" style="flex:1" autocomplete="off">
+      <button class="btn" type="submit">Ask</button></form>
+    <div class="row" style="margin-top:10px">
+      {% for s in (['Where is my bill?', 'Why was my bill held for review?', 'Who receives the money?'] if user.role == 'poster' else ['Did the biller get my money?', 'How do refunds work?', 'What is the status of my last PayPal order?']) %}
+      <button class="pill" data-s="{{ s }}" style="border:0;cursor:pointer">{{ s }}</button>{% endfor %}
+    </div>
+    <div class="hr"></div>
+    <button class="btn ghost small" id="human">Talk to a person</button> <span id="ticket" class="muted" style="font-size:13px"></span>
+  </div>
+  <div class="stack">
+    <div class="panel flat"><h3>Policies</h3>{% for k, v in policies.items() %}<details style="margin:8px 0"><summary style="font-weight:700;cursor:pointer">{{ k.replace('_', ' ')|capitalize }}</summary><p style="font-size:14px;margin:6px 0 0">{{ v }}</p></details>{% endfor %}</div>
+    {% if tickets %}<div class="panel flat"><h3>Your tickets</h3>{% for t in tickets %}<p style="font-size:14px"><span class="pill {{ 'ok' if t.status == 'RESOLVED' else 'warn' }}">{{ t.status|lower }}</span> {{ t.id }}: {{ t.subject }}{% if t.resolution %}<br><span class="muted">{{ t.resolution }}</span>{% endif %}</p>{% endfor %}</div>{% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/pay.js?v=1"></script>
+<script>
+(() => {
+  const chat = document.getElementById('chat'), q = document.getElementById('q'), history = [];
+  const bubble = (role, text, meta) => {
+    const d = document.createElement('div');
+    d.className = role === 'user' ? 'panel flat' : 'panel';
+    d.style.cssText = role === 'user' ? 'background:var(--primary-soft);border:0;padding:12px 14px;margin-left:15%' : 'padding:12px 14px;margin-right:10%';
+    d.textContent = text;
+    if (meta) { const m = document.createElement('div'); m.className = 'hint'; m.textContent = meta; d.appendChild(m); }
+    chat.appendChild(d); return d;
+  };
+  async function ask(text) {
+    if (!text.trim()) return;
+    bubble('user', text); history.push({role: 'user', content: text}); q.value = '';
+    const wait = bubble('assistant', 'Checking your records...');
+    const r = await BillkindPay.post('/api/help', {question: text, history});
+    const d = await r.json(); wait.remove();
+    const meta = (d.source === 'ai' ? 'AI answer checked against your records' : 'Answer built directly from your records') + (d.tools && d.tools.length ? ' · looked up: ' + [...new Set(d.tools)].join(', ') : '') + (d.note ? ' · ' + d.note : '');
+    bubble('assistant', d.answer, meta); history.push({role: 'assistant', content: d.answer});
+    if (d.escalate) document.getElementById('human').classList.add('violet');
+  }
+  document.getElementById('ask').onsubmit = e => { e.preventDefault(); ask(q.value); };
+  document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => ask(b.dataset.s));
+  document.getElementById('human').onclick = async () => {
+    const r = await BillkindPay.post('/api/help/escalate', {history, subject: history.length ? history[0].content : 'Support request'});
+    const d = await r.json(); document.getElementById('ticket').textContent = `Ticket ${d.ticket} opened. A person will reply in your inbox.`;
+  };
+})();
+</script>
+{% endblock %}

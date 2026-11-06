@@ -41,14 +41,20 @@ class PayPalClient:
         self._transport = transport
         self._token: str | None = None
         self._token_exp = 0.0
-        self._token_lock = asyncio.Lock()
+        self._token_locks: dict[int, asyncio.Lock] = {}
         self.calls: list[tuple[str, str, int]] = []  # (method, path, status) for the API log
 
     def _http(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self.base_url, timeout=30, transport=self._transport)
 
+    def _lock(self) -> asyncio.Lock:
+        key = id(asyncio.get_running_loop())
+        if key not in self._token_locks:
+            self._token_locks[key] = asyncio.Lock()
+        return self._token_locks[key]
+
     async def token(self) -> str:
-        async with self._token_lock:
+        async with self._lock():
             if self._token and time.time() < self._token_exp - 60:
                 return self._token
             async with self._http() as h:

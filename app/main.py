@@ -15,11 +15,11 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
-from .ai import llm
+from .ai import agent, bulk, llm, support
 from .ai.intake import CATEGORY_LABELS
 from .config import settings
-from .core import events, funding, jobs, notify, posting, states, webhook_handlers
-from .core.money import FX_AS_OF, fmt
+from .core import automation, events, funding, jobs, notify, posting, states, webhook_handlers
+from .core.money import FX_AS_OF, fmt, to_minor
 from .paypal import fake, webhooks
 from .paypal.client import PayPalError, client
 from .web import auth, views
@@ -397,7 +397,8 @@ def sponsor_data(user: dict) -> dict:
     thanks = db.q("SELECT DISTINCT b.* FROM bills b JOIN contributions c ON c.bill_id = b.id WHERE c.sponsor_id = ? "
                   "AND b.thank_you != '' ORDER BY b.updated_at DESC LIMIT 6", (user["id"],))
     return {"items": items, "totals": [fmt(t["m"], t["currency"]) for t in totals], "paid_count": paid,
-            "biller_count": billers, "thanks": thanks}
+            "biller_count": billers, "thanks": thanks, "pledges": automation.pledges_for(user["id"]),
+            "has_token": bool(automation.active_token(user["id"]))}
 
 
 @app.get("/receipts/{contribution_id}", response_class=HTMLResponse)
@@ -438,8 +439,11 @@ async def admin_home(request: Request):
     hooks = db.q("SELECT id, event_type, received_at, verified, method, note FROM webhook_events "
                  "ORDER BY received_at DESC LIMIT 25")
     counts = {s: db.one("SELECT COUNT(*) AS n FROM bills WHERE status = ?", (s,))["n"] for s in states.BILL_LABELS}
+    tickets = db.q("SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id ORDER BY t.status, t.created_at DESC LIMIT 20")
+    for t in tickets:
+        t["lines"] = json.loads(t["transcript"] or "[]")
     return render(request, "admin.html", review=review, failed=failed, billers=billers, hooks=hooks,
-                  counts=counts, api_calls=list(reversed(client().calls[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
+                  counts=counts, tickets=tickets, api_calls=list(reversed(client().calls[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
 
 
 @app.post("/admin/bills/{bill_id}/decide")
@@ -509,6 +513,189 @@ async def paypal_webhook(request: Request):
         db.run("UPDATE webhook_events SET note = note || ' | error ' || ? WHERE id = ?", (str(exc)[:200], event.get("id")))
         return JSONResponse({"error": "processing failed"}, status_code=500)
     return {"ok": True, "outcome": outcome}
+
+
+# Big-sponsor mode ------------------------------------------------------------------------
+
+@app.get("/sponsor/bulk", response_class=HTMLResponse)
+async def bulk_page(request: Request):
+    auth.require(request, "sponsor")
+    return render(request, "bulk.html", client_id=settings.paypal_client_id)
+
+
+@app.post("/api/bulk/preview")
+async def bulk_preview(request: Request):
+    user = auth.require(request, "sponsor")
+    auth.check_csrf(request, request.headers.get("x-csrf"))
+    body = await request.json()
+    if body.get("text"):
+        f, source = await bulk.parse(str(body["text"]))
+    else:
+        f, source = bulk.clean(body.get("filter") or {}), "form"
+    sel = bulk.select(f, user["id"])
+    cur = sel["currency"]
+    picks = [{"bill_id": p["bill"]["id"], "amount_minor": p["amount_minor"], "amount": fmt(p["amount_minor"], cur),
+              "category": views.category_label(p["bill"]["category"]), "where": p["bill"]["city"] or p["bill"]["country"],
+              "country": views.country_name(p["bill"]["country"]), "biller": p["bill"]["biller_name"],
+              "due": views.due_text(p["bill"]["due_date"])} for p in sel["picks"]]
+    return {"filter": f, "source": source, "currency": cur, "picks": picks,
+            "total": fmt(sel.get("total_minor", 0), cur) if cur else "", "total_usd": f"{sel.get('total_usd', 0):.2f}",
+            "others": sel["others"]}
+
+
+# Giving agent, vault, recurring ---------------------------------------------------------------
+
+@app.get("/sponsor/agent", response_class=HTMLResponse)
+async def agent_page(request: Request):
+    user = auth.require(request, "sponsor")
+    a = db.one("SELECT * FROM agents WHERE sponsor_id = ? ORDER BY created_at DESC", (user["id"],))
+    decisions = []
+    spent = None
+    if a:
+        decisions = [agent.decision_view(d) for d in db.q(
+            "SELECT * FROM agent_decisions WHERE agent_id = ? ORDER BY created_at DESC LIMIT 40", (a["id"],))]
+        spent = float(agent.month_spent_usd(a["id"], user["id"]))
+    return render(request, "agent.html", agent=a, policy=json.loads(a["policy"]) if a else None,
+                  decisions=decisions, spent=spent, token=automation.active_token(user["id"]),
+                  draft=request.session.pop("agent_draft", None), pledges=automation.pledges_for(user["id"]))
+
+
+@app.post("/sponsor/agent/parse")
+async def agent_parse(request: Request, rules: str = Form(...), csrf: str = Form("")):
+    auth.require(request, "sponsor")
+    auth.check_csrf(request, csrf)
+    policy, source = await agent.parse_rules(rules)
+    request.session["agent_draft"] = {"rules": rules[:1000], "policy": policy, "source": source}
+    return RedirectResponse("/sponsor/agent#confirm", status_code=303)
+
+
+@app.post("/sponsor/agent/save")
+async def agent_save(request: Request):
+    user = auth.require(request, "sponsor")
+    form = await request.form()
+    auth.check_csrf(request, form.get("csrf"))
+    policy = agent.validate({
+        "monthly_budget_usd": form.get("monthly_budget_usd"), "per_bill_max_usd": form.get("per_bill_max_usd"),
+        "categories": form.getlist("categories"), "max_risk": form.get("max_risk"),
+        "countries": [c.strip() for c in str(form.get("countries", "")).split(",") if c.strip()],
+        "urgent_first": True})
+    db.run("UPDATE agents SET active = 0 WHERE sponsor_id = ?", (user["id"],))
+    db.insert("agents", {"id": db.new_id("AGT"), "sponsor_id": user["id"], "rules_text": str(form.get("rules", ""))[:1000],
+                         "policy": json.dumps(policy), "active": 1, "created_at": db.now(), "last_run": db.now()})
+    return RedirectResponse("/sponsor/agent", status_code=303)
+
+
+@app.post("/sponsor/agent/run")
+async def agent_run(request: Request, csrf: str = Form("")):
+    user = auth.require(request, "sponsor")
+    auth.check_csrf(request, csrf)
+    a = db.one("SELECT * FROM agents WHERE sponsor_id = ? AND active = 1", (user["id"],))
+    if a:
+        await agent.run(a)
+    return RedirectResponse("/sponsor/agent#log", status_code=303)
+
+
+@app.post("/sponsor/agent/stop")
+async def agent_stop(request: Request, csrf: str = Form("")):
+    user = auth.require(request, "sponsor")
+    auth.check_csrf(request, csrf)
+    db.run("UPDATE agents SET active = 0 WHERE sponsor_id = ?", (user["id"],))
+    return RedirectResponse("/sponsor/agent", status_code=303)
+
+
+@app.get("/sponsor/vault/connect")
+async def vault_connect(request: Request, next: str = "/sponsor/agent"):
+    user = auth.require(request, "sponsor")
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/sponsor/agent"
+    request.session["vault_next"] = next
+    try:
+        st = await client().create_setup_token(return_url=settings.app_base_url + "/sponsor/vault/return",
+                                               cancel_url=settings.app_base_url + next)
+    except PayPalError as exc:
+        return render(request, "error.html", message=f"PayPal could not start saving your account: {exc}")
+    db.insert("vault_tokens", {"id": db.new_id("VLT"), "sponsor_id": user["id"], "setup_token_id": st["id"],
+                               "status": "PENDING", "created_at": db.now()})
+    link = [lk["href"] for lk in st.get("links", []) if lk.get("rel") == "approve"]
+    return RedirectResponse(link[0] if link else next, status_code=303)
+
+
+@app.get("/sponsor/vault/return")
+async def vault_return(request: Request, approval_token_id: str = ""):
+    user = auth.require(request, "sponsor")
+    row = db.one("SELECT * FROM vault_tokens WHERE sponsor_id = ? AND setup_token_id = ?", (user["id"], approval_token_id))
+    nxt = request.session.pop("vault_next", "/sponsor/agent")
+    if not row:
+        return RedirectResponse(nxt, status_code=303)
+    try:
+        pt = await client().create_payment_token(approval_token_id)
+    except PayPalError as exc:
+        return render(request, "error.html", message=f"PayPal did not save the account: {exc}")
+    db.run("UPDATE vault_tokens SET status = 'REPLACED' WHERE sponsor_id = ? AND status = 'ACTIVE'", (user["id"],))
+    db.update("vault_tokens", "id", row["id"], payment_token_id=pt["id"], status="ACTIVE",
+              payer_email=((pt.get("payment_source") or {}).get("paypal") or {}).get("email_address", ""))
+    notify.send(user["id"], "notice", "PayPal account saved for automatic giving",
+                "Your giving agent and monthly sponsorships can now pay bills within the limits you set. "
+                "You can stop them at any time.")
+    return RedirectResponse(nxt, status_code=303)
+
+
+@app.post("/sponsor/recurring")
+async def recurring_create(request: Request, bill_id: str = Form(...), amount: str = Form(...), csrf: str = Form("")):
+    user = auth.require(request, "sponsor")
+    auth.check_csrf(request, csrf)
+    bill = db.one("SELECT * FROM bills WHERE id = ?", (bill_id,))
+    if not bill:
+        raise HTTPException(404)
+    try:
+        automation.create_pledge(user, bill_id, to_minor(amount, bill["settle_currency"]))
+    except (funding.FundingError, ValueError) as exc:
+        return render(request, "error.html", message=str(exc))
+    if not automation.active_token(user["id"]):
+        return RedirectResponse("/sponsor/vault/connect?next=/sponsor", status_code=303)
+    return RedirectResponse("/sponsor#monthly", status_code=303)
+
+
+@app.post("/sponsor/recurring/{rid}/stop")
+async def recurring_stop(request: Request, rid: str, csrf: str = Form("")):
+    user = auth.require(request, "sponsor")
+    auth.check_csrf(request, csrf)
+    db.run("UPDATE recurring SET active = 0 WHERE id = ? AND sponsor_id = ?", (rid, user["id"]))
+    return RedirectResponse("/sponsor#monthly", status_code=303)
+
+
+# Support ---------------------------------------------------------------------------------------
+
+@app.get("/help", response_class=HTMLResponse)
+async def help_page(request: Request):
+    user = auth.require(request)
+    tickets = db.q("SELECT * FROM tickets WHERE user_id = ? ORDER BY created_at DESC LIMIT 5", (user["id"],))
+    return render(request, "help.html", tickets=tickets, policies=support.POLICIES)
+
+
+@app.post("/api/help")
+async def help_ask(request: Request):
+    user = auth.require(request)
+    auth.check_csrf(request, request.headers.get("x-csrf"))
+    body = await request.json()
+    return await support.answer(user, str(body.get("question", "")), body.get("history") or [])
+
+
+@app.post("/api/help/escalate")
+async def help_escalate(request: Request):
+    user = auth.require(request)
+    auth.check_csrf(request, request.headers.get("x-csrf"))
+    body = await request.json()
+    tid = support.escalate(user, body.get("history") or [], str(body.get("subject", "")))
+    return {"ticket": tid}
+
+
+@app.post("/admin/tickets/{tid}")
+async def admin_ticket(request: Request, tid: str, reply: str = Form(...), csrf: str = Form("")):
+    auth.require(request, "admin")
+    auth.check_csrf(request, csrf)
+    support.resolve(tid, reply)
+    return RedirectResponse("/admin#tickets", status_code=303)
 
 
 @app.get("/healthz")

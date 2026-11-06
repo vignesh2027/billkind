@@ -1,0 +1,80 @@
+{% extends "base.html" %}{% block title %}Big-sponsor mode · Billkind{% endblock %}
+{% block main %}
+<span class="eyebrow">Big-sponsor mode</span>
+<h1 style="margin-bottom:6px">Clear a whole group of bills in one go</h1>
+<p class="muted" style="max-width:720px">Describe what you want to clear. Billkind finds the matching verified bills, you pay once with PayPal, and every biller gets its own payout and every bill its own receipt. Money goes to the billers, never to the people.</p>
+<div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);align-items:start;margin-top:18px">
+  <div class="panel">
+    <label for="ask">What should we clear?</label>
+    <textarea id="ask" style="min-height:80px">Clear every school fee bill under 60 USD</textarea>
+    <div class="row" style="margin:10px 0">
+      {% for ex in ['Clear every school fee bill under 60 USD', 'Pay all electricity bills in Nigeria', 'Cover every medical bill under 50 dollars, total 150', 'Clear all bills in Nairobi'] %}
+      <button class="pill" type="button" data-ex="{{ ex }}" style="border:0;cursor:pointer">{{ ex }}</button>{% endfor %}
+    </div>
+    <button class="btn" id="find">Find bills</button>
+    <div id="filter" class="hint" style="margin-top:12px"></div>
+  </div>
+  <div class="panel" id="result" hidden>
+    <div class="spread"><h3 style="margin:0" id="count"></h3><strong id="total" style="font-size:22px"></strong></div>
+    <p class="muted" id="others" style="font-size:13px"></p>
+    <div class="table-wrap"><table><thead><tr><th>Bill</th><th>Paid to</th><th>Amount</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div id="pay-error" class="alert err" hidden style="margin-top:12px"></div>
+    <div id="pay-zone" style="margin-top:14px">
+      <div id="pp-buttons"></div>
+      {% if paypal_mode != 'sandbox' %}<button class="btn" id="fake-pay" style="width:100%">Pay all with the sandbox simulator</button>
+      <p class="hint">This deployment uses the local PayPal fake. With sandbox credentials, the official PayPal buttons appear here.</p>{% endif %}
+    </div>
+    <div id="done" class="alert ok" hidden></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/pay.js?v=1"></script>
+<script>
+(() => {
+  const MODE = "{{ paypal_mode }}", CLIENT_ID = "{{ client_id }}";
+  let picks = [], currency = 'USD';
+  const $ = id => document.getElementById(id);
+  document.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => { $('ask').value = b.dataset.ex; find(); });
+  $('find').onclick = find;
+  async function find() {
+    $('find').disabled = true;
+    const r = await BillkindPay.post('/api/bulk/preview', {text: $('ask').value});
+    const d = await r.json(); $('find').disabled = false;
+    const f = d.filter, parts = [];
+    if (f.category) parts.push('kind: ' + f.category.replace('_', ' '));
+    if (f.country) parts.push('country: ' + f.country);
+    if (f.city) parts.push('city: ' + f.city);
+    if (f.max_bill_usd) parts.push('each under ' + f.max_bill_usd + ' USD');
+    parts.push('total up to ' + f.max_total_usd + ' USD');
+    $('filter').textContent = 'Understood as ' + (d.source === 'ai' ? '(AI) ' : '') + parts.join(', ') + '. Only verified billers and low-risk bills are included.';
+    picks = d.picks; currency = d.currency || 'USD';
+    $('result').hidden = false; $('done').hidden = true; $('pay-zone').hidden = !picks.length; $('pay-error').hidden = true;
+    $('count').textContent = picks.length ? `${picks.length} bills found` : 'No matching bills right now';
+    $('total').textContent = d.total || '';
+    const others = Object.entries(d.others || {}).map(([c, n]) => `${n} in ${c}`).join(', ');
+    $('others').textContent = others ? `Also matching but settling in another currency (separate checkout): ${others}.` : '';
+    $('rows').innerHTML = '';
+    picks.forEach(p => {
+      const tr = document.createElement('tr'); tr.id = 'r-' + p.bill_id;
+      tr.innerHTML = '<td></td><td></td><td></td><td><span class="pill grey">ready</span></td>';
+      tr.children[0].innerHTML = `<strong></strong><div class="muted" style="font-size:12px"></div>`;
+      tr.children[0].querySelector('strong').textContent = p.category + ', ' + p.where;
+      tr.children[0].querySelector('div').textContent = p.bill_id + ' · ' + p.due;
+      tr.children[1].textContent = p.biller; tr.children[2].textContent = p.amount;
+      $('rows').appendChild(tr);
+    });
+    if (picks.length) BillkindPay.mount({mode: MODE, clientId: CLIENT_ID, currency, box: $('pp-buttons'), fakeButton: $('fake-pay'), source: 'bulk',
+      getPicks: () => picks.map(p => ({bill_id: p.bill_id, amount_minor: p.amount_minor})),
+      onError: msg => { $('pay-error').textContent = msg; $('pay-error').hidden = false; },
+      onDone: data => { $('pay-zone').hidden = true; $('done').hidden = false;
+        $('done').textContent = `One PayPal payment captured (${data.capture_id}). ${data.funded.length} bills fully funded; payouts to each biller are on their way.`;
+        data.funded.forEach(id => setStatus(id, 'funded', 'funded')); }});
+  }
+  function setStatus(id, cls, label) { const r = $('r-' + id); if (r) r.lastChild.innerHTML = `<span class="pill ${cls === 'paid' ? 'violet' : cls === 'sent' ? '' : 'ok'}">${label}</span>`; }
+  const es = new EventSource('/events/stream');
+  es.addEventListener('payout_sent', ev => { const d = JSON.parse(ev.data); setStatus(d.bill_id, 'sent', 'paying biller'); });
+  es.addEventListener('paid', ev => { const d = JSON.parse(ev.data); setStatus(d.bill_id, 'paid', 'PAID'); });
+})();
+</script>
+{% endblock %}
