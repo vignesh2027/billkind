@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Receipt {{ c.id }} · Billkind{% endblock %}
+{% block main %}
+<div class="panel" style="max-width:720px;margin:0 auto;position:relative">
+  {% if b.status == 'PAID' %}<span class="stamp">PAID</span>{% endif %}
+  <div class="row"><img src="/static/logo.svg" alt="" width="40"><div><h2 style="margin:0">Receipt</h2><span class="muted mono">{{ c.id }}</span></div></div>
+  <div class="hr"></div>
+  <table>
+    <tr><th>Your payment</th><td><strong>{{ fmt(c.amount_minor, c.currency) }}</strong>{% if c.refunded_minor %} ({{ fmt(c.refunded_minor, c.currency) }} refunded){% endif %}</td></tr>
+    <tr><th>Bill</th><td>{{ card.category_label }} bill {{ b.id }}, {{ card.city or card.country_name }}</td></tr>
+    <tr><th>Bill amount</th><td>{{ card.amount }}{% if b.settle_currency != b.currency %} (settled as {{ card.settle_amount }}){% endif %}</td></tr>
+    <tr><th>Paid to</th><td>{{ b.biller_name }} (verified biller), customer account {{ b.account_masked }}</td></tr>
+    <tr><th>Status</th><td>{{ card.status_label }}</td></tr>
+    <tr><th>PayPal order</th><td class="mono">{{ c.order_id }}</td></tr>
+    <tr><th>PayPal capture</th><td class="mono">{{ c.capture_id }}</td></tr>
+    {% if item %}<tr><th>PayPal payout item</th><td class="mono">{{ item.payout_item_id or 'pending' }} &middot; {{ item.status }}{% if item.transaction_id %} &middot; transaction {{ item.transaction_id }}{% endif %}</td></tr>{% endif %}
+    <tr><th>Paid by</th><td>{{ c.payer_email }}</td></tr>
+  </table>
+  {% if b.thank_you %}<div class="thanks" style="margin-top:16px">"{{ b.thank_you }}"</div>{% endif %}
+  <p class="muted" style="font-size:13px;margin-top:16px">Billkind sent this money to the biller, not to the person who posted the bill. This is a PayPal sandbox transaction for demonstration; it is not a tax receipt.</p>
+  <button class="btn ghost small" onclick="window.print()">Print</button>
+</div>
+{% endblock %}

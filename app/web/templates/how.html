@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}How it works · Billkind{% endblock %}
+{% block main %}
+<div style="max-width:820px">
+<h1>How Billkind works</h1>
+<p class="lead" style="font-size:18px">Billkind turns a joke about strangers paying your bills into something safe: sponsors pay the biller directly, so there is nothing to steal and nothing to misuse.</p>
+<h2 style="margin-top:28px">The one rule</h2>
+<p>Money only moves to a verified biller's PayPal account: the school, clinic, utility or landlord on the bill. It never goes to the person who posted. The worst a dishonest poster could do is get someone's real bill paid.</p>
+<h2 style="margin-top:28px">Nine checks on every bill</h2>
+<ol>
+<li>The biller is in our verified registry, with a PayPal account confirmed by a person.</li>
+<li>The file is not saved by photo or document editing software.</li>
+<li>The image shows no visual signs of editing.</li>
+<li>Two independent readings (an AI model and plain text recognition) agree on the amount and date.</li>
+<li>Line items add up to the total.</li>
+<li>The amount is typical for that kind of bill.</li>
+<li>The due date makes sense.</li>
+<li>It is not a duplicate, by file, by image similarity, or by account and amount.</li>
+<li>The poster is not posting too many bills or too much money at once.</li>
+</ol>
+<p>Low-risk bills go live automatically. Anything else waits for a person. Hard failures, like a bill that was already paid, are refused with the reason shown.</p>
+<h2 style="margin-top:28px">Privacy</h2>
+<p>Sponsors see the kind of bill, the city, the amount, the due date, the last four characters of the account number and a short note written from the poster's own words with their consent. Names, numbers and addresses are removed. Only the biller receives the full account number, inside the PayPal payout note.</p>
+<h2 style="margin-top:28px">Refunds</h2>
+<p>If a bill is withdrawn, reaches its due date before it is covered, cannot be paid out to the biller, or another sponsor covers it first, Billkind refunds you through PayPal automatically. You can see each refund on your giving page.</p>
+<h2 style="margin-top:28px">Sandbox only</h2>
+<p>This is a hackathon build. Every payment runs in the PayPal sandbox and no real money moves.</p>
+</div>
+{% endblock %}

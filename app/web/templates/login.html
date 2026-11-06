@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}Sign in · Billkind{% endblock %}
+{% block main %}
+<div class="grid cols-2" style="align-items:start">
+  <div class="panel">
+    <h2>Sign in</h2>
+    {% if error %}<div class="alert err">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="username"></div>
+      <div class="field"><label for="pw">Password</label><input id="pw" type="password" name="password" autocomplete="current-password"></div>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h2>Try a demo account</h2>
+    <p class="muted">One click, no password. These accounts exist for judges and testers; payments run in the PayPal sandbox.</p>
+    <div class="stack">
+    {% for email, role, what in demo %}
+      <form method="post" action="/login" class="spread panel flat" style="padding:14px">
+        <input type="hidden" name="email" value="{{ email }}"><input type="hidden" name="demo" value="1"><input type="hidden" name="next" value="{{ next }}">
+        <div><strong>{{ role }}</strong><div class="muted" style="font-size:13px">{{ what }} &middot; <span class="mono">{{ email }}</span></div></div>
+        <button class="btn small" type="submit">Continue as {{ role.lower() }}</button>
+      </form>
+    {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

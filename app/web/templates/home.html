@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% from "_macros.html" import billcard %}
+{% block main %}
+<section class="hero">
+  <div>
+    <span class="eyebrow">Inspired by a viral idea, built to be safe</span>
+    <h1>Swipe right on a stranger's bill. The biller gets paid. Nobody gets scammed.</h1>
+    <p class="lead">People anywhere post a real bill they cannot pay: power, water, school fees, a clinic invoice, rent. Sponsors swipe through verified, privacy-safe bill cards and pay them with PayPal. The money goes to the biller, never to the person, and you watch it land.</p>
+    <div class="row">
+      <a class="btn" href="/login?next=/deck">Start paying bills</a>
+      <a class="btn ghost" href="/login?next=/post">I need help with a bill</a>
+      <a class="btn ghost" href="/live">Watch the live wall</a>
+    </div>
+    <div class="grid cols-3" style="margin-top:28px;max-width:560px">
+      <div><div class="kpi counter" id="k-paid">{{ stats.paid }}</div><div class="kpi-label">bills cleared</div></div>
+      <div><div class="kpi counter" id="k-countries">{{ stats.countries }}</div><div class="kpi-label">countries</div></div>
+      <div><div class="kpi counter" id="k-live">{{ stats.live }}</div><div class="kpi-label">bills waiting now</div></div>
+    </div>
+    <p class="muted" style="margin-top:10px;font-size:13px">Counts come straight from the database of sandbox transactions.</p>
+  </div>
+  <div class="fan" aria-hidden="true">{% for c in cards %}{{ billcard(c) }}{% endfor %}</div>
+</section>
+<section style="margin-top:40px">
+  <h2>Why bills, and why the biller</h2>
+  <div class="grid cols-3">
+    <div class="panel"><h3>The gap is small</h3><p>37% of US adults would not cover a 400 USD emergency with cash. One in six US households is behind on utility bills. A 60 USD power bill decides whether the lights stay on.</p><small>Federal Reserve SHED 2026; NEADA June 2026</small></div>
+    <div class="panel"><h3>Crowdfunding misses it</h3><p>In a study of 437,596 medical fundraisers only 12% reached their goal and 16% got nothing. A single small bill never gets a campaign at all.</p><small>American Journal of Public Health, 2022</small></div>
+    <div class="panel"><h3>Givers want certainty</h3><p>Two thirds of donors say trust is essential, yet fewer than one in five highly trust charities. Paying a verified biller directly means you know exactly what your money did.</p><small>Give.org Donor Trust Report 2026</small></div>
+  </div>
+</section>
+<section style="margin-top:40px" class="how-steps">
+  <h2>How it works</h2>
+  <div class="grid cols-4">
+    <div class="panel"><h3>Snap the bill</h3><p>AI reads the photo or PDF, fills in the biller, amount and due date, and masks personal details.</p></div>
+    <div class="panel"><h3>Nine checks</h3><p>Verified biller, edit traces, two independent readings, duplicates, velocity and more. Risky bills go to a person.</p></div>
+    <div class="panel"><h3>Swipe and pay</h3><p>Sponsors pay all or part with PayPal, in the bill's currency. Several sponsors can pool into one bill.</p></div>
+    <div class="panel"><h3>Biller paid, live</h3><p>One PayPal payout to the biller's verified account, a receipt, a PAID stamp and a thank-you, in real time.</p></div>
+  </div>
+</section>
+{% endblock %}

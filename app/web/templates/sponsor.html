@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}My giving · Billkind{% endblock %}
+{% block main %}
+<div class="spread"><div><h2 style="margin:0">What your money did</h2><p class="muted">Every payment, where it went, and the proof. Updates live.</p></div>
+<a class="btn" href="/deck">Pay another bill</a></div>
+<div id="feed">{% include "_sponsor_feed.html" %}</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const es = new EventSource('/events/stream');
+  let t = null;
+  const reload = () => { clearTimeout(t); t = setTimeout(async () => {
+    const r = await fetch('/sponsor/feed'); if (r.ok) document.getElementById('feed').innerHTML = await r.text();
+  }, 250); };
+  const toast = msg => { const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+    document.getElementById('toast-root').appendChild(el); setTimeout(() => el.remove(), 5000); };
+  ['payout_sent', 'paid', 'thanks', 'fully_funded', 'refund', 'funded'].forEach(k => es.addEventListener(k, ev => {
+    const d = JSON.parse(ev.data); if (!d.mine) return; reload();
+    if (k === 'paid') toast('Paid: ' + d.message);
+    if (k === 'thanks') toast(d.message);
+  }));
+  es.addEventListener('message', ev => { const d = JSON.parse(ev.data); reload(); toast(d.message); });
+})();
+</script>
+{% endblock %}

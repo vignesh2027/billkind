@@ -1,0 +1,13 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+jinja2==3.1.6
+httpx==0.28.1
+python-multipart==0.0.33
+itsdangerous==2.2.0
+pypdf==6.21.4
+pillow==13.0.0
+cryptography==50.0.2
+requests==2.34.2
+pytest==9.2.0
+# Installed separately with --no-deps (its core needs only requests and pydantic):
+# paypal-agent-toolkit==1.11.0

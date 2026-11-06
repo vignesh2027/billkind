@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Billkind{% endblock %}</title>
+<meta name="description" content="Post a bill you cannot pay. Sponsors pay the biller directly, never the person.">
+<meta name="csrf" content="{{ csrf }}">
+<link rel="icon" href="/static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css?v=3">
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="sr-only" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/static/logo.svg" alt="">billkind</a>
+    {% if paypal_mode != 'sandbox' %}<span class="mode" title="Payments run against the local PayPal fake">LOCAL PAYMENTS FAKE</span>{% else %}<span class="mode" title="Real PayPal sandbox, no real money">SANDBOX</span>{% endif %}
+    <nav aria-label="Main">
+      {% set p = request.url.path %}
+      <a href="/live" class="{{ 'on' if p == '/live' }}">Live wall</a>
+      {% if user %}
+        {% if user.role in ('sponsor', 'admin') %}
+          <a href="/deck" class="{{ 'on' if p == '/deck' }}">Bills</a>
+          <a href="/sponsor" class="{{ 'on' if p.startswith('/sponsor') }}">My giving</a>
+        {% endif %}
+        {% if user.role in ('poster', 'admin') %}
+          <a href="/post" class="{{ 'on' if p.startswith('/post') }}">Post a bill</a>
+          <a href="/me" class="{{ 'on' if p == '/me' }}">My bills</a>
+        {% endif %}
+        {% if user.role == 'biller' %}<a href="/biller" class="{{ 'on' if p == '/biller' }}">Payouts</a>{% endif %}
+        {% if user.role == 'admin' %}<a href="/admin" class="{{ 'on' if p == '/admin' }}">Admin</a>{% endif %}
+        <a href="/help" class="{{ 'on' if p == '/help' }}">Help</a>
+        <a href="/inbox" class="{{ 'on' if p == '/inbox' }}">Inbox{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
+        <form method="post" action="/logout" style="display:inline"><button class="btn ghost small" type="submit">Sign out</button></form>
+      {% else %}
+        <a href="/how">How it works</a>
+        <a class="btn small" href="/login">Sign in</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+<main id="main"><div class="wrap">{% block main %}{% endblock %}</div></main>
+<footer class="footer"><div class="wrap spread">
+  <span>Billkind pays the biller, never the person. Sandbox only: no real money moves.</span>
+  <span><a href="/how">How it works</a> &middot; <a href="/help">Help</a> &middot; <a href="/live">Live wall</a></span>
+</div></footer>
+<div id="toast-root" aria-live="polite"></div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

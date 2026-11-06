@@ -1,0 +1,36 @@
+{% macro icon(cat) -%}
+<span class="cat" aria-hidden="true">
+{%- if cat == 'electricity' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+{%- elif cat == 'water' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z"/></svg>
+{%- elif cat == 'school_fees' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M2 9l10-5 10 5-10 5-10-5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/></svg>
+{%- elif cat == 'medical' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></svg>
+{%- elif cat == 'rent' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9z"/></svg>
+{%- elif cat == 'phone' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+{%- else -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/></svg>
+{%- endif -%}
+</span>
+{%- endmacro %}
+
+{% macro check() -%}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>{%- endmacro %}
+
+{% macro billcard(c, extra_class='') -%}
+<article class="bill {{ extra_class }}" data-id="{{ c.id }}" data-left="{{ c.left_minor }}" data-settle="{{ c.settle_currency }}" aria-label="{{ c.category_label }} bill in {{ c.city or c.country_name }}, {{ c.amount }}">
+  <span class="hint-pay" aria-hidden="true">PAY</span><span class="hint-pass" aria-hidden="true">PASS</span>
+  {% if c.paid %}<span class="stamp">PAID</span>{% endif %}
+  <div class="top">
+    <div class="row">{{ icon(c.category) }}<div><div class="where">{{ c.city ~ ', ' if c.city }}{{ c.country_name }}</div><strong>{{ c.category_label }}</strong></div></div>
+    {% if c.urgent %}<span class="pill danger">{{ c.due }}</span>{% else %}<span class="pill grey">{{ c.due }}</span>{% endif %}
+  </div>
+  <div class="amount">{{ c.amount }}</div>
+  <div class="conv">{% if c.amount_mine %}about {{ c.amount_mine }}{% endif %}{% if c.settle_currency != c.currency %} &middot; settles as {{ c.settle_amount }}{% endif %}</div>
+  <div class="biller">Paid to {{ c.biller }} {% if c.biller_verified %}<span class="verified">{{ check() }} verified biller</span>{% endif %}</div>
+  {% if c.story %}<p class="story">{{ c.story }}</p>{% endif %}
+  <div class="meta">
+    <span class="pill ok">{{ check() }} {{ c.checks }} of 9 checks passed</span>
+    <span class="pill">Account {{ c.account }}</span>
+    {% if c.sponsors %}<span class="pill violet">{{ c.sponsors }} sponsor{{ 's' if c.sponsors != 1 }}</span>{% endif %}
+  </div>
+  <div class="bar" aria-label="{{ c.funded_pct }} percent funded"><span style="width: {{ c.funded_pct }}%"></span></div>
+  <div class="spread" style="margin-top:8px;font-size:13px"><span class="muted">{{ c.funded }} of {{ c.settle_amount }} funded</span>{% if c.left %}<strong>{{ c.left }} to go</strong>{% endif %}</div>
+</article>
+{%- endmacro %}

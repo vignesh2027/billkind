@@ -1,0 +1,112 @@
+"""Unit tests: money, state machines, redaction, webhook signature verification."""
+
+import base64
+import datetime as dt
+import zlib
+
+import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+from app.ai import redact
+from app.core import states
+from app.core.money import convert, fmt, settlement_for, to_minor, to_value
+from app.paypal import webhooks
+
+
+def test_money_minor_units():
+    assert to_minor("84.20", "USD") == 8420
+    assert to_minor("1,234.5", "EUR") == 123450
+    assert to_minor("500", "JPY") == 500
+    assert to_value(8420, "USD") == "84.20"
+    assert to_value(5, "USD") == "0.05"
+    assert to_value(500, "JPY") == "500"
+    assert fmt(345000, "INR").startswith("₹")
+    with pytest.raises(ValueError):
+        to_minor("abc", "USD")
+
+
+def test_settlement_and_conversion():
+    assert settlement_for("GBP") == "GBP"
+    assert settlement_for("INR") == "USD"
+    assert settlement_for("KES") == "USD"
+    assert convert(845000, "INR", "USD") == 10000
+    assert convert(100, "USD", "USD") == 100
+
+
+def test_bill_state_machine():
+    states.check_bill("LISTED", "FUNDING")
+    states.check_bill("FUNDED", "PAYOUT_SENT")
+    states.check_bill("PAYOUT_SENT", "PAID")
+    for a, b in [("PAID", "WITHDRAWN"), ("LISTED", "PAID"), ("REJECTED", "LISTED"), ("PAYOUT_SENT", "WITHDRAWN"),
+                 ("DRAFT", "LISTED")]:
+        with pytest.raises(states.IllegalTransition):
+            states.check_bill(a, b)
+
+
+def test_contribution_state_machine():
+    states.check_contribution("CREATED", "CAPTURED")
+    states.check_contribution("CANCELLED", "CAPTURED")  # late approval after the reservation lapsed
+    states.check_contribution("CAPTURED", "PARTIALLY_REFUNDED")
+    with pytest.raises(states.IllegalTransition):
+        states.check_contribution("REFUNDED", "CAPTURED")
+    with pytest.raises(states.IllegalTransition):
+        states.check_contribution("DENIED", "CAPTURED")
+
+
+def test_redaction():
+    assert redact.mask_account("4455 6677 88") == "•••• 7788"
+    assert redact.mask_account("12") == "••••"
+    text = "I am Priya Raman, call +91 98765 43210 or priya@example.com, 12 Gandhi Road, acct 445566778899"
+    out = redact.scrub(text, names=["Priya Raman"])
+    for leaked in ("Priya", "Raman", "98765", "example.com", "445566778899", "Gandhi Road"):
+        assert leaked not in out
+    assert redact.account_hash("4455-6677", "B1") == redact.account_hash("44556677", "B1")
+
+
+# Webhook signature verification ------------------------------------------------------------
+
+def _cert(cn: str, days: int = 30):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, cn)])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now - dt.timedelta(days=1))
+            .not_valid_after(now + dt.timedelta(days=days)).sign(key, hashes.SHA256()))
+    return key, cert
+
+
+def _sign(key, msg: bytes) -> str:
+    return base64.b64encode(key.sign(msg, padding.PKCS1v15(), hashes.SHA256())).decode()
+
+
+def test_signed_message_format():
+    body = b'{"id":"WH-1"}'
+    msg = webhooks.signed_message("tid", "2026-11-06T00:00:00Z", "WH-ID", body)
+    assert msg == f"tid|2026-11-06T00:00:00Z|WH-ID|{zlib.crc32(body) & 0xFFFFFFFF}".encode()
+
+
+def test_signature_valid_and_tampered():
+    key, cert = _cert("messageverificationcerts.paypal.com")
+    body = b'{"event_type":"PAYMENT.CAPTURE.COMPLETED"}'
+    msg = webhooks.signed_message("t1", "2026-11-06T00:00:00Z", "WH-1", body)
+    sig = _sign(key, msg)
+    assert webhooks.verify_with_cert(cert, msg, sig)
+    assert webhooks.cert_is_acceptable(cert, allow_fake=False)
+    tampered = webhooks.signed_message("t1", "2026-11-06T00:00:00Z", "WH-1", body.replace(b"COMPLETED", b"REFUNDED"))
+    assert not webhooks.verify_with_cert(cert, tampered, sig)
+    wrong_hook = webhooks.signed_message("t1", "2026-11-06T00:00:00Z", "WH-2", body)
+    assert not webhooks.verify_with_cert(cert, wrong_hook, sig)
+    assert not webhooks.verify_with_cert(cert, msg, "not-base64!!")
+
+
+def test_cert_checks():
+    _, other = _cert("evil.example.com")
+    assert not webhooks.cert_is_acceptable(other, allow_fake=False)
+    assert webhooks.cert_url_allowed("https://api.paypal.com/v1/notifications/certs/CERT-360caa42")
+    assert webhooks.cert_url_allowed("https://api.sandbox.paypal.com/v1/notifications/certs/X")
+    assert not webhooks.cert_url_allowed("http://api.paypal.com/certs/X")
+    assert not webhooks.cert_url_allowed("https://paypal.com.evil.net/certs/X")
+    assert not webhooks.cert_url_allowed("https://evilpaypal.com/certs/X")
+    assert webhooks.cert_url_allowed("http://localhost:1/fakepaypal/certs/fake.pem", "http://localhost:1/fakepaypal")

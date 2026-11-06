@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% block title %}Check your bill · Billkind{% endblock %}
+{% block main %}
+<h2>Check what we read</h2>
+<p class="muted">Read by {% if ext.source == 'ai' %}an AI model{% elif ext.source == 'ocr' %}text recognition (AI was unavailable){% else %}nobody: please fill it in{% endif %}. Fix anything that is wrong. Changing the amount or biller by hand sends the bill to a person for review.</p>
+{% if error %}<div class="alert err">{{ error }}</div>{% endif %}
+<form method="post" action="/post/{{ bill.id }}" class="grid cols-2" style="align-items:start">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="panel">
+    <h3>The bill</h3>
+    <div class="field"><label for="biller_name">Biller</label><input id="biller_name" type="text" name="biller_name" value="{{ form.biller_name or bill.biller_name }}" required>
+      <div class="hint">{% if bill.biller_id %}Matched to a verified biller in our registry.{% else %}Not in our verified registry yet. A person will verify the biller's account first.{% endif %}</div></div>
+    <div class="grid cols-2" style="gap:12px">
+      <div class="field"><label for="amount">Amount due</label><input id="amount" type="text" name="amount" inputmode="decimal" value="{{ form.amount or amount }}" required></div>
+      <div class="field"><label for="currency">Currency</label><input id="currency" type="text" name="currency" maxlength="3" value="{{ form.currency or bill.currency }}" required></div>
+    </div>
+    <div class="grid cols-2" style="gap:12px">
+      <div class="field"><label for="due_date">Due date</label><input id="due_date" type="date" name="due_date" value="{{ form.due_date or bill.due_date }}" required></div>
+      <div class="field"><label for="category">Kind of bill</label><select id="category" name="category">{% for k, v in categories.items() %}<option value="{{ k }}" {{ 'selected' if (form.category or bill.category) == k }}>{{ v }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="field"><label for="account_reference">Account, student or patient number</label><input id="account_reference" type="text" name="account_reference" value="{{ form.account_reference or ext.account_reference or '' }}" required>
+      <div class="hint">Only the biller sees this, so they can credit the right account. Sponsors see the last four characters.</div></div>
+    <div class="grid cols-2" style="gap:12px">
+      <div class="field"><label for="city">City</label><input id="city" type="text" name="city" value="{{ form.city or bill.city }}"></div>
+      <div class="field"><label for="country">Country code</label><input id="country" type="text" name="country" maxlength="2" value="{{ form.country or bill.country }}"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Your note to sponsors (optional)</h3>
+    <p class="muted" style="font-size:14px">A sentence or two in your own words. We turn it into a short, respectful note and remove names, numbers and addresses. You will see it before sponsors do on your bills page.</p>
+    <div class="field"><label for="words">In your words</label><textarea id="words" name="words" placeholder="For example: My hours were cut this month and the school fee is due before my next pay.">{{ form.words or '' }}</textarea></div>
+    <div class="field"><label for="alias">First name or nickname to show (optional)</label><input id="alias" type="text" name="alias" maxlength="24" value="{{ form.alias or '' }}"></div>
+    <label class="check"><input type="checkbox" name="consent" value="1" required> <span>I agree that a privacy-safe card for this bill, with the note written from my words, is shown to sponsors. I understand the money goes to the biller, not to me.</span></label>
+    <div class="hr"></div>
+    <button class="btn" type="submit">Run the checks and post</button>
+    {% if ext.ocr_chars %}<p class="hint">Independent text reading found {{ ext.ocr_chars }} characters; it is used to double-check the amount and date.</p>{% endif %}
+  </div>
+</form>
+{% endblock %}

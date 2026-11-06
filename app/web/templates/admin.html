@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% block title %}Admin · Billkind{% endblock %}
+{% block main %}
+<h2>Operations</h2>
+<div class="row" style="margin-bottom:18px">{% for s, n in counts.items() if n %}<span class="pill {{ 'warn' if s == 'REVIEW' else 'danger' if s == 'PAYOUT_FAILED' else 'grey' }}">{{ BILL_LABELS[s] }}: {{ n }}</span>{% endfor %}</div>
+<div class="panel" id="review"><h3>Review queue ({{ review|length }})</h3>
+{% for b in review %}
+  <div class="grid cols-2 panel flat" style="margin-top:12px">
+    <div>
+      <div class="spread"><strong>{{ b.id }} &middot; {{ category_label(b.category) }} &middot; {{ fmt(b.amount_minor, b.currency) }}</strong><span class="pill danger">risk {{ b.risk_score }}</span></div>
+      <p style="margin:6px 0">Biller as printed: <strong>{{ b.biller_name }}</strong> {% if not b.biller_id %}<span class="pill warn">not in registry</span>{% endif %} &middot; {{ b.city }}, {{ country_name(b.country) }} &middot; due {{ b.due_date }}</p>
+      {% for r in b.reasons %}<div class="reason"><b>+{{ r.points }}</b><span>{{ r.text }}</span></div>{% endfor %}
+      <p class="hint">Read by {{ b.ext.source }}; independent reading: {{ b.ext.ocr }}</p>
+      <form method="post" action="/admin/bills/{{ b.id }}/decide" class="row" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="text" name="note" placeholder="Reason shown to the poster if rejected" style="flex:1;min-width:200px">
+        <button class="btn small" name="decision" value="approve">Approve and list</button>
+        <button class="btn danger small" name="decision" value="reject">Reject</button>
+      </form>
+    </div>
+    <div><a href="/admin/docs/{{ b.id }}" target="_blank"><img class="doc-thumb" src="/admin/docs/{{ b.id }}" alt="Original document for {{ b.id }}" onerror="this.replaceWith(document.createTextNode('Open the original document'))"></a></div>
+  </div>
+{% else %}<p class="muted">Nothing waiting.</p>{% endfor %}
+</div>
+<div class="panel" style="margin-top:18px"><h3>Payout problems ({{ failed|length }})</h3>
+{% for b in failed %}
+  <div class="spread" style="padding:10px 0;border-bottom:1px solid var(--line)"><span>{{ b.id }} &middot; {{ b.biller_name }} &middot; {{ fmt(b.settle_minor, b.settle_currency) }} &middot; <span class="muted">{{ b.reject_reason }}</span></span>
+  <form method="post" action="/admin/bills/{{ b.id }}/payout" class="row"><input type="hidden" name="csrf" value="{{ csrf }}">
+  <button class="btn small" name="action" value="retry">Retry payout</button><button class="btn danger small" name="action" value="refund">Refund sponsors</button></form></div>
+{% else %}<p class="muted">None.</p>{% endfor %}
+</div>
+<div class="panel" style="margin-top:18px" id="billers"><h3>Biller registry</h3>
+<div class="table-wrap"><table><thead><tr><th>Biller</th><th>Where</th><th>PayPal account</th><th>Status</th></tr></thead><tbody>
+{% for b in billers %}<tr><td>{{ b.name }}<div class="muted" style="font-size:12px">{{ category_label(b.category) }}</div></td><td>{{ b.city }}, {{ country_name(b.country) }}</td><td class="mono">{{ b.paypal_email }}</td>
+<td>{% if b.verified %}<span class="pill ok">verified</span>{% else %}<form method="post" action="/admin/billers/{{ b.id }}/verify"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn small">Mark verified</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="grid cols-2" style="margin-top:18px">
+<div class="panel"><h3>Webhook log</h3><div class="table-wrap"><table><thead><tr><th>Event</th><th>Verified</th><th>Outcome</th></tr></thead><tbody>
+{% for h in hooks %}<tr><td class="mono" style="font-size:12px">{{ h.event_type }}</td><td>{% if h.verified %}<span class="pill ok">{{ h.method }}</span>{% else %}<span class="pill danger">no</span>{% endif %}</td><td style="font-size:12px">{{ h.note }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No webhooks yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="panel"><h3>PayPal API calls (this process)</h3><div class="table-wrap"><table><thead><tr><th>Method</th><th>Path</th><th>Status</th></tr></thead><tbody>
+{% for m, p, s in api_calls %}<tr><td>{{ m }}</td><td class="mono" style="font-size:12px">{{ p }}</td><td>{{ s }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None yet.</td></tr>{% endfor %}
+</tbody></table></div>
+<h3 style="margin-top:18px">AI calls</h3><div class="table-wrap"><table><thead><tr><th>Task</th><th>Model</th><th>OK</th><th>ms</th></tr></thead><tbody>
+{% for c in ai_calls %}<tr><td>{{ c.kind }}</td><td class="mono" style="font-size:12px">{{ c.model }}</td><td>{{ 'yes' if c.ok else 'no' }}</td><td>{{ c.ms }}</td></tr>{% else %}<tr><td colspan="4" class="muted">None yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+</div>
+{% endblock %}

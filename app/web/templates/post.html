@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}Post a bill · Billkind{% endblock %}
+{% block main %}
+<div class="grid cols-2" style="align-items:start">
+  <div class="panel">
+    <h2>Post a bill</h2>
+    <p>Take a clear photo of the whole bill, or upload the PDF. We read it for you, check it, and hide your personal details before anyone sees it.</p>
+    {% if error %}<div class="alert err">{{ error }}</div>{% endif %}
+    <form method="post" action="/post" enctype="multipart/form-data" id="up">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" id="device">
+      <div class="field"><label for="file">Bill photo or PDF</label><input id="file" type="file" name="file" accept="image/*,application/pdf" capture="environment" required></div>
+      <button class="btn" type="submit" id="go">Read my bill</button>
+      <p class="hint" id="wait" hidden>Reading your bill. This takes a few seconds.</p>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="panel flat"><h3>What happens next</h3>
+      <ol style="padding-left:18px;margin:0">
+        <li>AI reads the biller, amount, due date and account number.</li>
+        <li>You check them and add a few words about your situation, if you want.</li>
+        <li>Nine safety checks run. Most bills go live straight away; some wait for a person.</li>
+        <li>Sponsors pay the biller directly. You never handle the money, and nobody sees your name or account number.</li>
+      </ol>
+    </div>
+    {% if samples %}<div class="panel flat"><h3>Sample bills for testing</h3><p class="muted" style="font-size:14px">Download one and upload it above.</p>
+      <div class="row">{% for s in samples %}<a class="pill" href="/samples/{{ s }}" download>{{ s }}</a>{% endfor %}</div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+document.getElementById('device').value = [navigator.platform, screen.width + 'x' + screen.height, Intl.DateTimeFormat().resolvedOptions().timeZone].join('|').slice(0, 64);
+document.getElementById('up').addEventListener('submit', () => { document.getElementById('go').disabled = true; document.getElementById('wait').hidden = false; });
+</script>{% endblock %}

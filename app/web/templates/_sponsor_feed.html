@@ -1,0 +1,24 @@
+{% from "_macros.html" import icon, check %}
+<div class="grid cols-4" style="margin:6px 0 22px">
+  <div class="panel"><div class="kpi">{{ paid_count }}</div><div class="kpi-label">bills paid to their billers</div></div>
+  <div class="panel"><div class="kpi">{{ biller_count }}</div><div class="kpi-label">billers paid</div></div>
+  <div class="panel"><div class="kpi" style="font-size:24px">{{ totals|join(' + ') or '0' }}</div><div class="kpi-label">given (after refunds)</div></div>
+  <div class="panel"><div class="kpi">{{ thanks|length }}</div><div class="kpi-label">thank-you notes</div></div>
+</div>
+{% if thanks %}
+<div class="panel" style="margin-bottom:18px"><h3>Thank-you notes</h3>
+{% for b in thanks %}<div class="thanks" style="margin-top:10px">"{{ b.thank_you }}" <small style="display:block;color:#6b4fa0">{{ category_label(b.category) }} bill, {{ b.city or country_name(b.country) }}</small></div>{% endfor %}
+</div>{% endif %}
+<div class="panel"><h3>Your payments</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Bill</th><th>You gave</th><th>Status</th><th>Proof</th></tr></thead>
+<tbody>
+{% for c in items %}
+<tr id="row-{{ c.id }}">
+  <td><div class="row" style="gap:10px">{{ icon(c.category) }}<div><strong>{{ c.category_label }}</strong>, {{ c.city or c.country_name }}<div class="muted" style="font-size:13px">Paid to {{ c.biller }} &middot; {{ c.id }}</div></div></div></td>
+  <td><strong>{{ c.given }}</strong>{% if c.refunded %}<div class="muted" style="font-size:12px">{{ c.refunded }} refunded</div>{% endif %}<div class="muted" style="font-size:12px">{{ c.source }}</div></td>
+  <td>{% if c.paid %}<span class="pill violet">{{ check() }} Paid to biller</span>{% elif c.status in ('PAYOUT_SENT',) %}<span class="pill">Paying the biller</span>{% elif c.status in ('WITHDRAWN','EXPIRED') %}<span class="pill grey">{{ c.status_label }}, refunded</span>{% else %}<span class="pill">{{ c.status_label }} &middot; {{ c.funded_pct }}%</span>{% endif %}</td>
+  <td style="font-size:12px" class="mono">order {{ c.order_id }}<br>capture {{ c.capture_id }}{% if c.payout_item %}<br>payout {{ c.payout_item }}{% endif %}<br><a href="/receipts/{{ c.contribution }}">receipt</a></td>
+</tr>
+{% else %}<tr><td colspan="4" class="muted">No payments yet. <a href="/deck">Find a bill</a>.</td></tr>{% endfor %}
+</tbody></table></div></div>

@@ -1,0 +1,249 @@
+{% extends "base.html" %}{% from "_macros.html" import billcard %}
+{% block title %}Bills · Billkind{% endblock %}
+{% block main %}
+<div class="deck-wrap">
+  <section aria-labelledby="deck-title">
+    <div class="spread" style="margin-bottom:16px">
+      <div><h2 id="deck-title" style="margin:0">Bills waiting for a sponsor</h2>
+      <span class="muted">Drag right to pay, left to pass. Or use <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> and the buttons.</span></div>
+    </div>
+    <div class="deck" id="deck" tabindex="0" aria-describedby="deck-help">
+      {% for c in cards|reverse %}{{ billcard(c) }}{% endfor %}
+      <div class="panel empty" id="deck-empty" {% if cards %}hidden{% endif %}>
+        <h3>You have seen every open bill</h3>
+        <p class="muted">New bills arrive all the time. Watch the live wall, or bring passed bills back.</p>
+        <div class="row" style="justify-content:center"><button class="btn ghost" id="reset-passes">Show passed bills again</button><a class="btn" href="/live">Live wall</a></div>
+      </div>
+    </div>
+    <p id="deck-help" class="sr-only">Focus the card stack, then press the right arrow to pay the top bill or the left arrow to pass.</p>
+    <div class="deck-actions" {% if not cards %}hidden{% endif %} id="deck-actions">
+      <button class="round" id="btn-pass" aria-label="Pass on this bill"><svg viewBox="0 0 24 24" fill="none" stroke="#55657F" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button class="round pay" id="btn-pay" aria-label="Pay this bill"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+    </div>
+    <div id="sr-status" class="sr-only" aria-live="polite"></div>
+  </section>
+  <aside class="stack">
+    <div class="panel">
+      <h3>Where your money goes</h3>
+      <p style="font-size:14px">Straight to the verified biller's PayPal account in one payout, with the customer's account reference. Never to the person who posted.</p>
+      <p style="font-size:14px" class="muted">If a bill is withdrawn, expires or another sponsor covers it first, PayPal refunds you automatically.</p>
+    </div>
+    <div class="panel">
+      <h3>Clear many at once</h3>
+      <p style="font-size:14px">Pick a filter, like every school-fee bill under 50 USD, and pay them all in one checkout.</p>
+      <a class="btn ghost small" href="/sponsor/bulk">Big-sponsor mode</a>
+    </div>
+    <div class="panel">
+      <h3>Let an agent give for you</h3>
+      <p style="font-size:14px">Set a budget and rules in plain words. Caps are enforced in code.</p>
+      <a class="btn ghost small" href="/sponsor/agent">Giving agent</a>
+    </div>
+  </aside>
+</div>
+
+<div class="sheet-bg" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  <div class="sheet">
+    <div class="spread"><h2 id="sheet-title" style="margin:0">Pay this bill</h2><button class="btn ghost small" id="sheet-close" aria-label="Close">Close</button></div>
+    <div id="sheet-bill" class="muted" style="margin:6px 0 4px"></div>
+    <div id="pay-step">
+      <div class="amounts" id="amounts" role="radiogroup" aria-label="Amount"></div>
+      <div class="field"><label for="custom">Or enter an amount (<span id="cur-label"></span>)</label><input id="custom" type="number" min="1" step="0.01" inputmode="decimal"></div>
+      <div id="pay-error" class="alert err" hidden></div>
+      <div id="pp-buttons"></div>
+      {% if paypal_mode != 'sandbox' %}
+      <button class="btn" id="fake-pay" style="width:100%">Pay with the sandbox simulator</button>
+      <p class="hint">This deployment uses the local PayPal fake (no credentials configured). With sandbox credentials, the official PayPal buttons appear here.</p>
+      {% endif %}
+    </div>
+    <div id="done-step" hidden>
+      <div style="position:relative">
+        <div class="alert ok" id="done-msg">Payment captured.</div>
+        <span class="stamp pop" id="done-stamp" hidden>PAID</span>
+      </div>
+      <ol class="steps" id="steps">
+        <li class="done" data-step="captured"><span class="dot"></span><span>PayPal payment captured <span class="mono" id="cap-id"></span></span></li>
+        <li data-step="funded"><span class="dot"></span><span id="funded-label">Bill fully funded</span></li>
+        <li data-step="payout_sent"><span class="dot"></span><span>Payout sent to the biller</span></li>
+        <li data-step="paid"><span class="dot"></span><span>Biller confirmed paid</span></li>
+        <li data-step="thanks"><span class="dot"></span><span>Thank-you from the household</span></li>
+      </ol>
+      <div id="thanks" class="thanks" hidden></div>
+      <div class="row" style="margin-top:16px"><button class="btn" id="next-bill">Next bill</button><a class="btn ghost" href="/sponsor">See what my money did</a></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const CSRF = "{{ csrf }}", MODE = "{{ paypal_mode }}", CLIENT_ID = "{{ client_id }}";
+  const deck = document.getElementById('deck'), sheet = document.getElementById('sheet');
+  const sr = document.getElementById('sr-status');
+  let current = null, amount = 0, orderBill = null, payCurrency = 'USD';
+  const dec = c => ['JPY','HUF','TWD'].includes(c) ? 0 : 2;
+  const fmt = (m, c) => (m / Math.pow(10, dec(c))).toLocaleString(undefined, {minimumFractionDigits: dec(c), maximumFractionDigits: dec(c)}) + ' ' + c;
+  const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF': CSRF}, body: JSON.stringify(body || {})});
+  const top = () => { const cards = deck.querySelectorAll('.bill'); return cards[cards.length - 1] || null; };
+  const refresh = () => {
+    const t = top();
+    document.getElementById('deck-empty').hidden = !!t;
+    document.getElementById('deck-actions').hidden = !t;
+    if (t) sr.textContent = t.getAttribute('aria-label');
+  };
+  function fling(card, dir) {
+    card.style.transform = `translateX(${dir * 140}%) rotate(${dir * 18}deg)`;
+    card.style.opacity = '0';
+    setTimeout(() => { card.remove(); refresh(); }, 320);
+  }
+  function pass() {
+    const t = top(); if (!t) return;
+    post('/api/pass/' + t.dataset.id);
+    fling(t, -1);
+  }
+  function openPay() {
+    const t = top(); if (!t) return;
+    current = t; orderBill = t.dataset.id; payCurrency = t.dataset.settle;
+    const left = parseInt(t.dataset.left, 10);
+    document.getElementById('sheet-bill').textContent = t.getAttribute('aria-label') + '. Still needed: ' + fmt(left, payCurrency) + '.';
+    document.getElementById('cur-label').textContent = payCurrency;
+    const opts = [[left, 'Cover it all'], [Math.max(100, Math.round(left / 2)), 'Half'], [Math.min(left, 10 * Math.pow(10, dec(payCurrency))), 'Chip in']];
+    const box = document.getElementById('amounts'); box.innerHTML = '';
+    const seen = new Set();
+    opts.forEach(([m, label], i) => {
+      if (seen.has(m) || m <= 0) return; seen.add(m);
+      const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'radio');
+      b.innerHTML = `${fmt(m, payCurrency)}<small>${label}</small>`;
+      b.onclick = () => { amount = m; box.querySelectorAll('button').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-checked', 'false'); }); b.classList.add('on'); b.setAttribute('aria-checked', 'true'); document.getElementById('custom').value = ''; };
+      box.appendChild(b); if (i === 0) b.click();
+    });
+    document.getElementById('pay-step').hidden = false;
+    document.getElementById('done-step').hidden = true;
+    document.getElementById('pay-error').hidden = true;
+    sheet.classList.add('open');
+    renderButtons();
+    setTimeout(() => (document.getElementById('fake-pay') || document.getElementById('custom')).focus(), 50);
+  }
+  function chosenAmount() {
+    const v = parseFloat(document.getElementById('custom').value);
+    if (!isNaN(v) && v > 0) return Math.round(v * Math.pow(10, dec(payCurrency)));
+    return amount;
+  }
+  function showError(msg) { const e = document.getElementById('pay-error'); e.textContent = msg; e.hidden = false; }
+  async function createOrder() {
+    const r = await post('/api/orders', {picks: [{bill_id: orderBill, amount_minor: chosenAmount()}], source: 'swipe'});
+    const data = await r.json();
+    if (!r.ok) { showError(data.error || 'Could not start the payment.'); throw new Error(data.error); }
+    return data;
+  }
+  async function capture(orderID) {
+    const r = await post('/api/orders/' + orderID + '/capture');
+    const data = await r.json();
+    if (!r.ok) { showError(data.error || 'The payment did not complete.'); return; }
+    if (data.status && data.status !== 'COMPLETED') { showError('PayPal reported ' + data.status + '. You were not charged.'); return; }
+    done(data);
+  }
+  function done(data) {
+    document.getElementById('pay-step').hidden = true;
+    document.getElementById('done-step').hidden = false;
+    document.getElementById('cap-id').textContent = data.capture_id ? '(' + data.capture_id + ')' : '';
+    document.getElementById('done-msg').textContent = 'Thank you. PayPal captured your payment. Watch it reach the biller:';
+    document.querySelectorAll('#steps li').forEach(li => { if (li.dataset.step !== 'captured') li.className = ''; });
+    if (data.funded && data.funded.includes(orderBill)) mark('funded'); else {
+      document.getElementById('funded-label').textContent = 'Waiting for other sponsors to cover the rest';
+      document.querySelector('[data-step=funded]').className = 'now';
+    }
+    if (current) { const c = current; current = null; setTimeout(() => fling(c, 1), 200); }
+  }
+  function mark(step) {
+    const order = ['captured', 'funded', 'payout_sent', 'paid', 'thanks'];
+    const idx = order.indexOf(step);
+    document.querySelectorAll('#steps li').forEach(li => {
+      const i = order.indexOf(li.dataset.step);
+      if (i <= idx) li.className = 'done'; else if (i === idx + 1 && step !== 'thanks') li.className = 'now';
+    });
+    if (step === 'paid') document.getElementById('done-stamp').hidden = false;
+  }
+  // Live updates for the bill just paid
+  const es = new EventSource('/events/stream');
+  ['fully_funded', 'payout_sent', 'paid', 'thanks'].forEach(kind => es.addEventListener(kind, ev => {
+    const d = JSON.parse(ev.data);
+    if (d.bill_id !== orderBill) return;
+    if (kind === 'fully_funded') { document.getElementById('funded-label').textContent = 'Bill fully funded'; mark('funded'); }
+    if (kind === 'payout_sent') mark('payout_sent');
+    if (kind === 'paid') { mark('paid'); sr.textContent = 'The biller confirmed the payment.'; }
+    if (kind === 'thanks') { mark('thanks'); const t = document.getElementById('thanks'); t.hidden = false; t.textContent = d.message; }
+  }));
+  // PayPal buttons (sandbox) or the local simulator
+  const loaded = {};
+  function loadSdk(cur) {
+    if (loaded[cur]) return loaded[cur];
+    loaded[cur] = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(CLIENT_ID)}&currency=${cur}&intent=capture&components=buttons&disable-funding=card,credit,paylater,venmo`;
+      s.setAttribute('data-namespace', 'pp_' + cur);
+      s.onload = () => res(window['pp_' + cur]); s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    return loaded[cur];
+  }
+  async function renderButtons() {
+    const box = document.getElementById('pp-buttons'); box.innerHTML = '';
+    if (MODE !== 'sandbox' || !CLIENT_ID) return;
+    const pp = await loadSdk(payCurrency);
+    pp.Buttons({
+      style: {layout: 'vertical', shape: 'pill', label: 'pay', height: 48},
+      createOrder: async () => (await createOrder()).id,
+      onApprove: async (data) => capture(data.orderID),
+      onCancel: () => showError('Payment cancelled. Nothing was charged.'),
+      onError: () => showError('PayPal reported an error. Nothing was charged.'),
+    }).render(box);
+  }
+  const fakeBtn = document.getElementById('fake-pay');
+  if (fakeBtn) fakeBtn.onclick = async () => {
+    let order; try { order = await createOrder(); } catch (e) { return; }
+    const w = window.open(order.approve_url + '&popup=1', 'pp', 'width=440,height=640');
+    const onMsg = async (ev) => {
+      if (!ev.data || !ev.data.fakepaypal || ev.data.orderID !== order.id) return;
+      window.removeEventListener('message', onMsg);
+      if (ev.data.approved) capture(order.id); else showError('Payment cancelled. Nothing was charged.');
+    };
+    window.addEventListener('message', onMsg);
+    if (!w) location.href = order.approve_url;
+  };
+  // Gestures
+  let startX = 0, dx = 0, dragging = null;
+  deck.addEventListener('pointerdown', e => {
+    const t = top(); if (!t || !t.contains(e.target)) return;
+    dragging = t; startX = e.clientX; dx = 0; t.classList.add('dragging'); t.setPointerCapture(e.pointerId);
+  });
+  deck.addEventListener('pointermove', e => {
+    if (!dragging) return; dx = e.clientX - startX;
+    dragging.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+    dragging.querySelector('.hint-pay').style.opacity = Math.max(0, Math.min(1, dx / 110));
+    dragging.querySelector('.hint-pass').style.opacity = Math.max(0, Math.min(1, -dx / 110));
+  });
+  const end = () => {
+    if (!dragging) return; const t = dragging; dragging = null; t.classList.remove('dragging');
+    t.querySelector('.hint-pay').style.opacity = 0; t.querySelector('.hint-pass').style.opacity = 0;
+    if (dx > 110) { t.style.transform = ''; openPay(); }
+    else if (dx < -110) pass();
+    else t.style.transform = '';
+  };
+  deck.addEventListener('pointerup', end); deck.addEventListener('pointercancel', end);
+  document.addEventListener('keydown', e => {
+    if (sheet.classList.contains('open')) { if (e.key === 'Escape') closeSheet(); return; }
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); openPay(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); pass(); }
+  });
+  function closeSheet() { sheet.classList.remove('open'); deck.focus(); }
+  document.getElementById('btn-pass').onclick = pass;
+  document.getElementById('btn-pay').onclick = openPay;
+  document.getElementById('sheet-close').onclick = closeSheet;
+  document.getElementById('next-bill').onclick = closeSheet;
+  const reset = document.getElementById('reset-passes');
+  if (reset) reset.onclick = async () => { await post('/api/passes/reset'); location.reload(); };
+  refresh();
+})();
+</script>
+{% endblock %}

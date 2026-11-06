@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Inbox · Billkind{% endblock %}
+{% block main %}
+<h2>Inbox</h2>
+<p class="muted">Receipts, payout confirmations, thank-you notes and notices. Billkind stores these in the app; the hackathon build sends no email.</p>
+<div class="stack">
+{% for m in msgs %}
+  <div class="panel flat">
+    <div class="spread"><strong>{{ m.subject }}</strong><span class="pill {{ 'violet' if m.kind in ('receipt','thanks','paid','payout') else 'grey' }}">{{ m.kind }}</span></div>
+    <p style="white-space:pre-line;margin:8px 0 0">{{ m.body }}</p>
+    {% if m.contribution_id %}<a href="/receipts/{{ m.contribution_id }}">Open receipt</a>{% endif %}
+  </div>
+{% else %}<div class="panel empty">Nothing here yet.</div>{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,242 @@
+"""PayPal REST client for the endpoints Billkind uses.
+
+Works against the real sandbox (PAYPAL_MODE=sandbox) or the local fake in app/paypal/fake.py,
+which implements the same paths and payload shapes.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+import uuid
+
+import httpx
+
+from ..config import settings
+
+
+class PayPalError(Exception):
+    def __init__(self, status: int, body: dict | str, op: str):
+        self.status = status
+        self.body = body
+        self.op = op
+        name = body.get("name") if isinstance(body, dict) else ""
+        details = body.get("details") if isinstance(body, dict) else None
+        issue = details[0].get("issue") if details else ""
+        super().__init__(f"PayPal {op} failed: HTTP {status} {name} {issue}".strip())
+
+    @property
+    def issue(self) -> str:
+        if isinstance(self.body, dict) and self.body.get("details"):
+            return self.body["details"][0].get("issue", "")
+        return ""
+
+
+class PayPalClient:
+    def __init__(self, base_url: str | None = None, client_id: str | None = None,
+                 secret: str | None = None, transport: httpx.AsyncBaseTransport | None = None):
+        self.base_url = (base_url or settings.paypal_base_url).rstrip("/")
+        self.client_id = client_id if client_id is not None else (settings.paypal_client_id or "fake-client")
+        self.secret = secret if secret is not None else (settings.paypal_client_secret or "fake-secret")
+        self._transport = transport
+        self._token: str | None = None
+        self._token_exp = 0.0
+        self._token_lock = asyncio.Lock()
+        self.calls: list[tuple[str, str, int]] = []  # (method, path, status) for the API log
+
+    def _http(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(base_url=self.base_url, timeout=30, transport=self._transport)
+
+    async def token(self) -> str:
+        async with self._token_lock:
+            if self._token and time.time() < self._token_exp - 60:
+                return self._token
+            async with self._http() as h:
+                r = await h.post("/v1/oauth2/token", data={"grant_type": "client_credentials"},
+                                 auth=(self.client_id, self.secret),
+                                 headers={"Accept": "application/json"})
+            self.calls.append(("POST", "/v1/oauth2/token", r.status_code))
+            if r.status_code != 200:
+                raise PayPalError(r.status_code, _body(r), "oauth2/token")
+            data = r.json()
+            self._token = data["access_token"]
+            self._token_exp = time.time() + int(data.get("expires_in", 3000))
+            return self._token
+
+    async def _req(self, method: str, path: str, op: str, json: dict | None = None,
+                   request_id: str | None = None, params: dict | None = None,
+                   prefer: bool = True) -> dict:
+        headers = {"Authorization": f"Bearer {await self.token()}", "Content-Type": "application/json"}
+        if prefer:
+            headers["Prefer"] = "return=representation"
+        if request_id:
+            headers["PayPal-Request-Id"] = request_id
+        async with self._http() as h:
+            r = await h.request(method, path, json=json, headers=headers, params=params)
+        self.calls.append((method, path, r.status_code))
+        if r.status_code >= 400:
+            raise PayPalError(r.status_code, _body(r), op)
+        return r.json() if r.content else {}
+
+    # Orders v2 -----------------------------------------------------------------
+
+    async def create_order(self, *, currency: str, items: list[dict], total: str, custom_id: str,
+                           invoice_id: str, description: str, vault_id: str | None = None,
+                           request_id: str | None = None) -> dict:
+        """items: [{'name','sku','value','description'}]; one purchase unit with an item per bill."""
+        unit = {
+            "reference_id": custom_id,
+            "custom_id": custom_id,
+            "invoice_id": invoice_id,
+            "description": description[:127],
+            "soft_descriptor": "BILLKIND",
+            "amount": {
+                "currency_code": currency,
+                "value": total,
+                "breakdown": {"item_total": {"currency_code": currency, "value": total}},
+            },
+            "items": [
+                {
+                    "name": it["name"][:127],
+                    "sku": it["sku"][:127],
+                    "description": it.get("description", "")[:127],
+                    "quantity": "1",
+                    "category": "DONATION",
+                    "unit_amount": {"currency_code": currency, "value": it["value"]},
+                }
+                for it in items
+            ],
+        }
+        body: dict = {"intent": "CAPTURE", "purchase_units": [unit]}
+        if vault_id:
+            body["payment_source"] = {"paypal": {"vault_id": vault_id}}
+        else:
+            body["payment_source"] = {"paypal": {"experience_context": {
+                "brand_name": "Billkind",
+                "shipping_preference": "NO_SHIPPING",
+                "user_action": "PAY_NOW",
+                "return_url": settings.app_base_url + "/paypal/return",
+                "cancel_url": settings.app_base_url + "/paypal/cancel",
+            }}}
+        return await self._req("POST", "/v2/checkout/orders", "create order", body,
+                                request_id=request_id or str(uuid.uuid4()))
+
+    async def get_order(self, order_id: str) -> dict:
+        return await self._req("GET", f"/v2/checkout/orders/{order_id}", "get order", prefer=False)
+
+    async def capture_order(self, order_id: str, request_id: str | None = None) -> dict:
+        return await self._req("POST", f"/v2/checkout/orders/{order_id}/capture", "capture order",
+                                {}, request_id=request_id or f"cap-{order_id}")
+
+    # Payments v2 ---------------------------------------------------------------
+
+    async def refund_capture(self, capture_id: str, *, amount: str | None, currency: str,
+                             invoice_id: str, note: str, request_id: str) -> dict:
+        body: dict = {"invoice_id": invoice_id[:127], "note_to_payer": note[:255]}
+        if amount is not None:
+            body["amount"] = {"currency_code": currency, "value": amount}
+        return await self._req("POST", f"/v2/payments/captures/{capture_id}/refund", "refund capture",
+                                body, request_id=request_id)
+
+    # Payouts v1 ----------------------------------------------------------------
+
+    async def create_payout(self, *, sender_batch_id: str, items: list[dict], subject: str,
+                            message: str) -> dict:
+        """items: [{'receiver','value','currency','note','sender_item_id'}]"""
+        body = {
+            "sender_batch_header": {
+                "sender_batch_id": sender_batch_id,
+                "email_subject": subject,
+                "email_message": message,
+                "recipient_type": "EMAIL",
+            },
+            "items": [
+                {
+                    "recipient_type": "EMAIL",
+                    "receiver": it["receiver"],
+                    "amount": {"value": it["value"], "currency": it["currency"]},
+                    "note": it["note"][:4000],
+                    "sender_item_id": it["sender_item_id"],
+                }
+                for it in items
+            ],
+        }
+        return await self._req("POST", "/v1/payments/payouts", "create payout", body, prefer=False)
+
+    async def get_payout_batch(self, batch_id: str) -> dict:
+        return await self._req("GET", f"/v1/payments/payouts/{batch_id}", "get payout batch",
+                                prefer=False, params={"fields": "batch_header,items", "page_size": 100})
+
+    # Vault v3 ------------------------------------------------------------------
+
+    async def create_setup_token(self, *, return_url: str, cancel_url: str) -> dict:
+        body = {"payment_source": {"paypal": {
+            "description": "Billkind giving agent: pays verified bills within your limits",
+            "usage_pattern": "UNSCHEDULED_POSTPAID",
+            "usage_type": "MERCHANT",
+            "customer_type": "CONSUMER",
+            "permit_multiple_payment_tokens": False,
+            "experience_context": {"brand_name": "Billkind", "return_url": return_url,
+                                   "cancel_url": cancel_url, "shipping_preference": "NO_SHIPPING",
+                                   "vault_instruction": "ON_PAYER_APPROVAL"},
+        }}}
+        return await self._req("POST", "/v3/vault/setup-tokens", "create setup token", body,
+                                request_id=str(uuid.uuid4()))
+
+    async def create_payment_token(self, setup_token_id: str) -> dict:
+        body = {"payment_source": {"token": {"id": setup_token_id, "type": "SETUP_TOKEN"}}}
+        return await self._req("POST", "/v3/vault/payment-tokens", "create payment token", body,
+                                request_id=f"pt-{setup_token_id}")
+
+    # Webhooks ------------------------------------------------------------------
+
+    async def verify_webhook_signature(self, *, headers: dict, event: dict, webhook_id: str) -> str:
+        body = {
+            "auth_algo": headers.get("paypal-auth-algo", ""),
+            "cert_url": headers.get("paypal-cert-url", ""),
+            "transmission_id": headers.get("paypal-transmission-id", ""),
+            "transmission_sig": headers.get("paypal-transmission-sig", ""),
+            "transmission_time": headers.get("paypal-transmission-time", ""),
+            "webhook_id": webhook_id,
+            "webhook_event": event,
+        }
+        data = await self._req("POST", "/v1/notifications/verify-webhook-signature",
+                               "verify webhook", body, prefer=False)
+        return data.get("verification_status", "FAILURE")
+
+
+def _body(r: httpx.Response) -> dict | str:
+    try:
+        return r.json()
+    except ValueError:
+        return r.text[:500]
+
+
+_client: PayPalClient | None = None
+
+
+def client() -> PayPalClient:
+    global _client
+    if _client is None:
+        _client = PayPalClient()
+    return _client
+
+
+def set_client(c: PayPalClient | None) -> None:
+    global _client
+    _client = c
+
+
+def approve_link(order: dict) -> str:
+    for link in order.get("links", []):
+        if link.get("rel") in ("approve", "payer-action"):
+            return link["href"]
+    return ""
+
+
+def first_capture(order: dict) -> dict | None:
+    for pu in order.get("purchase_units", []):
+        caps = pu.get("payments", {}).get("captures", [])
+        if caps:
+            return caps[0]
+    return None
