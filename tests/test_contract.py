@@ -126,9 +126,9 @@ def test_payouts_contract():
 
 @pytest.mark.skipif(os.environ.get("PAYPAL_CONTRACT_SANDBOX") != "1", reason="real sandbox contract run not requested")
 def test_real_sandbox_smoke():
-    """Run with real credentials: PAYPAL_CONTRACT_SANDBOX=1 PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... pytest -k sandbox"""
-    c = pp.PayPalClient(base_url="https://api-m.sandbox.paypal.com", client_id=os.environ["PAYPAL_CLIENT_ID"],
-                        secret=os.environ["PAYPAL_CLIENT_SECRET"])
+    """Run with real credentials in .env: PAYPAL_CONTRACT_SANDBOX=1 pytest -k sandbox"""
+    c = pp.PayPalClient(base_url="https://api-m.sandbox.paypal.com", client_id=os.environ["SANDBOX_CLIENT_ID"],
+                        secret=os.environ["SANDBOX_CLIENT_SECRET"])
 
     async def flow():
         order = await c.create_order(**_order_kwargs())

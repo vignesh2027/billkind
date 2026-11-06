@@ -155,3 +155,21 @@ def test_cannot_pay_more_than_needed_or_own_bill():
     assert r.status_code == 409
     r = s.post("/api/orders", json={"picks": [{"bill_id": b["id"], "amount_minor": 100}]}, headers={"X-CSRF": "bad"})
     assert r.status_code == 400
+
+
+def test_foreign_currency_payout_falls_back_to_usd():
+    db.run("UPDATE billers SET paypal_email = 'usdonly-biller@business.example.com' WHERE id = 'BLR-VERDE'")
+    try:
+        s, c = login("sponsor@billkind.demo")
+        b = _bill(6)  # MXN electricity bill, settles in MXN
+        from app.core import funding
+        db.run("UPDATE contributions SET status = 'CANCELLED' WHERE bill_id = ? AND status = 'CREATED'", (b["id"],))
+        left = funding.remaining(db.one("SELECT * FROM bills WHERE id = ?", (b["id"],)))
+        assert left > 0 and b["settle_currency"] == "MXN"
+        _pay(s, c, [{"bill_id": b["id"], "amount_minor": left}])
+        assert wait_for(lambda: _status(b["id"]) == "PAID")
+        item = db.one("SELECT * FROM payout_items WHERE bill_id = ?", (b["id"],))
+        assert item["currency"] == "USD"
+        assert "Paid out in USD" in db.one("SELECT fx_note FROM bills WHERE id = ?", (b["id"],))["fx_note"]
+    finally:
+        db.run("UPDATE billers SET paypal_email = 'verde-biller@business.example.com' WHERE id = 'BLR-VERDE'")

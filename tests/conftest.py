@@ -14,6 +14,13 @@ _sock = socket.socket()
 _sock.bind(("127.0.0.1", 0))
 PORT = _sock.getsockname()[1]
 _sock.close()
+# Keep real credentials for the opt-in sandbox contract test before the app settings are pointed at the fake.
+# (Parsed by hand: importing app.config here would freeze settings before the test overrides below.)
+_envfile = Path(__file__).resolve().parent.parent / ".env"
+_dot = dict(line.split("=", 1) for line in (_envfile.read_text().splitlines() if _envfile.exists() else [])
+            if "=" in line and not line.strip().startswith("#"))
+os.environ.setdefault("SANDBOX_CLIENT_ID", _dot.get("PAYPAL_CLIENT_ID", "").strip())
+os.environ.setdefault("SANDBOX_CLIENT_SECRET", _dot.get("PAYPAL_CLIENT_SECRET", "").strip())
 os.environ.update({
     "DB_PATH": str(Path(_tmp) / "test.db"), "UPLOAD_DIR": str(Path(_tmp) / "uploads"),
     "APP_BASE_URL": f"http://127.0.0.1:{PORT}", "PAYPAL_MODE": "fake", "AI_DISABLED": "1",

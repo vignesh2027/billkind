@@ -13,7 +13,7 @@ import datetime as dt
 from .. import db
 from ..paypal.client import PayPalError, client, first_capture
 from . import events, notify, states
-from .money import exponent, fmt, to_value
+from .money import convert, exponent, fmt, to_value
 
 RESERVATION_SECONDS = 15 * 60
 TERMINAL_PAYOUT = {"SUCCESS", "FAILED", "UNCLAIMED", "RETURNED", "BLOCKED", "DENIED", "REFUNDED", "REVERSED"}
@@ -319,8 +319,17 @@ def _note(bill: dict) -> str:
             f"({_cat(bill)}, due {bill['due_date']}). Paid on behalf of your customer by Billkind sponsors.")
 
 
-async def send_payouts(bills: list[dict]) -> str | None:
-    """One payout batch, one item per funded bill, each to the bill's verified biller."""
+CURRENCY_ISSUES = {"INSUFFICIENT_FUNDS", "CURRENCY_NOT_SUPPORTED", "CURRENCY_NOT_SUPPORTED_FOR_RECEIVER",
+                   "RECEIVER_UNCONFIRMED_CURRENCY", "CURRENCY_COMPLIANCE"}
+
+
+async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None:
+    """One payout batch, one item per funded bill, each to the bill's verified biller.
+
+    Items go out in the bill's settlement currency. If PayPal refuses the batch for a currency reason (for example
+    the platform account holds no balance in that currency), the batch is retried once with those items in USD at
+    the indicative rate, and the bill records why.
+    """
     items, ready = [], []
     for bill in bills:
         bill = get_bill(bill["id"])
@@ -332,8 +341,11 @@ async def send_payouts(bills: list[dict]) -> str | None:
             continue
         attempt = db.one("SELECT COUNT(*) AS n FROM payout_items WHERE bill_id = ?", (bill["id"],))["n"]
         sid = f"{bill['id']}-P{attempt + 1}"
-        items.append({"receiver": biller["paypal_email"], "value": to_value(bill["settle_minor"], bill["settle_currency"]),
-                      "currency": bill["settle_currency"], "note": _note(bill), "sender_item_id": sid})
+        cur, amount = bill["settle_currency"], bill["settle_minor"]
+        if force_usd and cur != "USD":
+            amount, cur = convert(amount, cur, "USD"), "USD"
+        items.append({"receiver": biller["paypal_email"], "value": to_value(amount, cur),
+                      "currency": cur, "note": _note(bill), "sender_item_id": sid, "_minor": amount})
         ready.append((bill, biller, sid))
     if not items:
         return None
@@ -344,6 +356,12 @@ async def send_payouts(bills: list[dict]) -> str | None:
                                             message="A Billkind sponsor paid a customer's bill. The account "
                                                     "reference is in the payment note.")
     except PayPalError as exc:
+        reason = exc.issue or (exc.body.get("name") if isinstance(exc.body, dict) else "")
+        if not force_usd and reason in CURRENCY_ISSUES and any(it["currency"] != "USD" for it in items):
+            for bill, _, _ in ready:
+                db.update("bills", "id", bill["id"], fx_note=(bill["fx_note"] + " " if bill["fx_note"] else "") +
+                          f"Paid out in USD because PayPal refused a {bill['settle_currency']} payout ({reason}).")
+            return await send_payouts([b for b, _, _ in ready], force_usd=True)
         for bill, _, _ in ready:
             set_status(bill, "PAYOUT_FAILED", reject_reason=str(exc))
         _admin_notice("Payout batch failed", str(exc))
@@ -354,7 +372,7 @@ async def send_payouts(bills: list[dict]) -> str | None:
                                  "created_at": db.now(), "updated_at": db.now()})
     for (bill, biller, sid), it in zip(ready, items):
         db.insert("payout_items", {"sender_item_id": sid, "batch_id": batch_id, "bill_id": bill["id"],
-                                   "amount_minor": bill["settle_minor"], "currency": bill["settle_currency"],
+                                   "amount_minor": it["_minor"], "currency": it["currency"],
                                    "receiver": biller["paypal_email"], "status": "PENDING",
                                    "created_at": db.now(), "updated_at": db.now()})
         set_status(bill, "PAYOUT_SENT", payout_batch_id=batch_id)
@@ -450,7 +468,9 @@ async def retry_payout(bill_id: str) -> str | None:
     bill = get_bill(bill_id)
     if bill["status"] != "PAYOUT_FAILED":
         raise FundingError("only failed payouts can be retried")
-    return await send_payouts([bill])
+    last = db.one("SELECT currency FROM payout_items WHERE bill_id = ? ORDER BY created_at DESC", (bill_id,))
+    # A failed payout in a foreign currency is retried in USD; a failed USD payout is retried as is.
+    return await send_payouts([bill], force_usd=bool(last and last["currency"] != "USD"))
 
 
 def thank(bill_id: str, poster_id: str, text: str) -> dict:

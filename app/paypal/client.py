@@ -44,13 +44,16 @@ class SdkBridge:
         from paypalserversdk.configuration import Configuration, Environment, Server
         from paypalserversdk.http.auth.o_auth_2 import ClientCredentialsAuthCredentials
         from paypalserversdk.paypal_serversdk_client import PaypalServersdkClient
-        # The SDK only knows the live and sandbox hosts; point its sandbox entry at our base URL (the sandbox
-        # itself, or the local fake).
-        Configuration.environments[Environment.SANDBOX][Server.DEFAULT] = base_url
-        self.sdk = PaypalServersdkClient(
-            client_credentials_auth_credentials=ClientCredentialsAuthCredentials(o_auth_client_id=client_id,
-                                                                                 o_auth_client_secret=secret),
-            environment=Environment.SANDBOX)
+        # The SDK only knows the live and sandbox hosts. A per-instance Configuration subclass points it at our
+        # base URL (the sandbox itself, or the local fake) without touching the SDK's shared class state.
+        class _Config(Configuration):
+            def get_base_uri(self, server=Server.DEFAULT):
+                return base_url
+
+        config = _Config(environment=Environment.SANDBOX,
+                         client_credentials_auth_credentials=ClientCredentialsAuthCredentials(
+                             o_auth_client_id=client_id, o_auth_client_secret=secret))
+        self.sdk = PaypalServersdkClient(config=config)
 
     async def call(self, controller: str, method: str, options: dict, op: str, log: list, path: str) -> dict:
         import json as _json
@@ -153,7 +156,6 @@ class PayPalClient:
                     "sku": it["sku"][:127],
                     "description": it.get("description", "")[:127],
                     "quantity": "1",
-                    "category": "DONATION",
                     "unit_amount": {"currency_code": currency, "value": it["value"]},
                 }
                 for it in items

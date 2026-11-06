@@ -277,6 +277,9 @@ async def create_order(request: Request):
         if (issue := _valid_amount(pu.get("amount"))):
             return _err(422, "UNPROCESSABLE_ENTITY", issue, "purchase_units/amount")
         items = pu.get("items") or []
+        if any(i.get("category") == "DONATION" for i in items):
+            # Real sandbox behaviour for accounts without donation eligibility.
+            return _err(403, "NOT_AUTHORIZED", "PERMISSION_DENIED_FOR_DONATION_ITEMS")
         if items:
             cur = pu["amount"]["currency_code"]
             total = sum(Decimal(i["unit_amount"]["value"]) * int(i.get("quantity", "1")) for i in items)
@@ -509,6 +512,9 @@ async def create_payout(request: Request):
             return _err(422, "VALIDATION_ERROR", issue, "items/amount")
         if not it.get("receiver"):
             return _err(400, "VALIDATION_ERROR", "MISSING_REQUIRED_PARAMETER", "items/receiver")
+    if any("usdonly" in it["receiver"] and it["amount"]["currency"] != "USD" for it in items):
+        # Test hook: the platform account holds no balance in that currency.
+        return _err(422, "INSUFFICIENT_FUNDS", "INSUFFICIENT_FUNDS", "Sender does not have sufficient funds.")
     SENDER_BATCH_IDS.add(sbid)
     bid = _pp_id(13)
     batch = {
