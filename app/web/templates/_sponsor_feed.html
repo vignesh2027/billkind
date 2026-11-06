@@ -7,7 +7,7 @@
 </div>
 {% if thanks %}
 <div class="panel" style="margin-bottom:18px"><h3>Thank-you notes</h3>
-{% for b in thanks %}<div class="thanks" style="margin-top:10px">"{{ b.thank_you }}" <small style="display:block;color:#6b4fa0">{{ category_label(b.category) }} bill, {{ b.city or country_name(b.country) }}</small></div>{% endfor %}
+{% for b in thanks %}<div class="thanks" style="margin-top:10px">"{{ b.thank_you }}" <small style="display:block;color:var(--accent-ink)">{{ category_label(b.category) }} bill, {{ b.city or country_name(b.country) }}</small></div>{% endfor %}
 </div>{% endif %}
 <div class="panel" id="monthly" style="margin-bottom:18px"><div class="spread"><h3 style="margin:0">Monthly sponsorships</h3>{% if not has_token %}<a class="btn ghost small" href="/sponsor/vault/connect?next=/sponsor">Save PayPal for automatic giving</a>{% endif %}</div>
 <p class="muted" style="font-size:13px">Cover a household's next bill automatically each month, paid to the same biller with your saved PayPal (Vault).</p>

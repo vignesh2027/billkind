@@ -17,7 +17,7 @@
     </div>
     <p id="deck-help" class="sr-only">Focus the card stack, then press the right arrow to pay the top bill or the left arrow to pass.</p>
     <div class="deck-actions" {% if not cards %}hidden{% endif %} id="deck-actions">
-      <button class="round" id="btn-pass" aria-label="Pass on this bill"><svg viewBox="0 0 24 24" fill="none" stroke="#55657F" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button class="round" id="btn-pass" aria-label="Pass on this bill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       <button class="round pay" id="btn-pay" aria-label="Pay this bill"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
     </div>
     <div id="sr-status" class="sr-only" aria-live="polite"></div>
