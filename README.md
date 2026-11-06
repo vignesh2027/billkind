@@ -1,0 +1,159 @@
+# Billkind
+
+**Post a bill you cannot pay. A stranger pays it. The money goes to the biller, never to the person.**
+
+Billkind is a real, safe version of a viral joke about an app where you upload your bills and bored billionaires swipe right to pay them. People anywhere post a real bill (electricity, water, school fees, a clinic invoice, rent, a phone bill). Sponsors swipe through verified, privacy-safe bill cards and pay them with PayPal. When a bill is covered, Billkind sends one PayPal payout to the biller's verified account, and the sponsor watches the paid stamp, the receipt and the thank-you arrive live.
+
+Built for the PayPal AI Hackathon 2026. Sandbox only: no real money moves.
+
+| | |
+|---|---|
+| Live demo | https://applemacbook6sep2004--billkind.us-east.modal.run |
+| Demo video | (YouTube link added at submission) |
+| License | MIT |
+
+## Try it in two minutes
+
+Open the live demo, choose **Sign in**, and use the one-click demo accounts. No password needed.
+
+| Account | What to try |
+|---|---|
+| Sponsor (`sponsor@billkind.demo`) | **Bills**: swipe right (or press the right arrow) on a bill, pay, and watch the steps tick through to PAID. **My giving** shows every payment with its PayPal order, capture and payout IDs. |
+| Big sponsor (`bigsponsor@billkind.demo`) | **Big-sponsor mode**: type "Clear every school fee bill under 60 USD" and pay them all in one checkout. **Giving agent**: write rules in plain words, confirm the limits, save PayPal, press Run now, and read the decision log. |
+| Poster (`poster@billkind.demo`) | **Post a bill**: download a fresh sample bill from the same page, upload it, check what the AI read, add a few words, and post. Each browser gets its own poster account. |
+| Admin (`admin@billkind.demo`) | Review queue with risk reasons and the original document, biller registry, payout problems, support tickets, the webhook log and the PayPal and AI call logs. |
+| Biller (`biller@billkind.demo`) | Payouts received, with the customer account number from each payout note. |
+
+The **Live wall** (no sign-in) shows bills being cleared around the world. Every number on it is counted from transactions recorded by the app; nothing is pre-filled.
+
+Payment approval: on the hosted demo, until PayPal sandbox credentials are configured, payments run against the built-in PayPal fake and a neutral "sandbox payment simulator" window stands in for the PayPal login. With sandbox credentials the official PayPal buttons appear and you log in with the sandbox buyer below.
+
+| Sandbox buyer (for the PayPal popup) | |
+|---|---|
+| Email | (added when the sandbox accounts are created) |
+| Password | (added when the sandbox accounts are created) |
+
+Suggested path for judges: sign in as Poster in one browser window and post the fresh sample bill. Sign in as Sponsor in a private window, swipe right on that bill and pay. Watch the PAID stamp appear in both windows, then send a thank-you as the poster and watch it reach the sponsor.
+
+## Why it matters
+
+| Fact | Source |
+|---|---|
+| 37% of US adults would not cover a 400 USD emergency with cash. | Federal Reserve, Economic Well-Being of U.S. Households in 2025 (May 2026) |
+| One in six US households is behind on utility bills; utilities disconnected electric service about 13.5 million times in 2024. | NEADA, June 2026 |
+| Families in India spend on average 25,002 INR a year per student in non-government schools; 1.2% rely mainly on scholarships. | MoSPI NSS 80th round, 2025 |
+| Of 437,596 US medical crowdfunding campaigns, 12% met their goal and 16% received nothing. | American Journal of Public Health, 2022 |
+| 67.7% of donors say trust is essential, but 18.3% highly trust charities. | Give.org Donor Trust Report 2026 |
+
+Small bills never get a crowdfunding campaign, and givers want to know exactly what their money did. Paying a verified biller directly answers both. Full sources are in [DESIGN.md](DESIGN.md).
+
+## How fraud is stopped
+
+The core rule removes the incentive: **money only moves to a verified biller's PayPal account, never to the poster.** The worst a dishonest poster can do is get someone's real bill paid.
+
+On top of that, every bill passes nine checks before it can be paid: verified biller registry, editing-software traces in the file, visual editing signs, two independent readings of the amount and date (a vision model and OCR), line items adding up, a typical amount for the kind of bill, a sensible due date, duplicates (same file, near-identical image with the same amount, same account and amount), and posting velocity per account and device. The result is a 0 to 100 risk score with every reason in plain words. Low-risk bills list automatically, others go to a person, and hard failures such as an already-paid bill are refused with the reason shown. Code: [app/ai/fraud.py](app/ai/fraud.py).
+
+Account numbers are masked to the last four characters, and names, phone numbers, emails and addresses are removed before anything is public ([app/ai/redact.py](app/ai/redact.py)). The full account number is sent only to the biller, inside the payout note.
+
+## PayPal APIs used
+
+| API | What Billkind uses it for | Code |
+|---|---|---|
+| OAuth 2.0 client credentials | Access tokens (cached; the SDK manages its own) | [app/paypal/client.py#L102](app/paypal/client.py#L102) |
+| PayPal Server SDK for Python (`paypal-server-sdk`, generated by APIMatic) | All Orders, Payments and Vault calls below run through it; a plain REST path is kept behind `PAYPAL_SDK=rest` | [app/paypal/client.py#L35](app/paypal/client.py#L35) |
+| Orders v2: create order | Every sponsor payment. One purchase unit with one item per bill, so big-sponsor mode pays many bills in one checkout. `PayPal-Request-Id` for idempotency. | [client.py#L135](app/paypal/client.py#L135), [funding.py#L88](app/core/funding.py#L88) |
+| Orders v2: capture, get order | Capturing after buyer approval, and reconciling from webhooks | [client.py#L180](app/paypal/client.py#L180), [funding.py#L166](app/core/funding.py#L166) |
+| JS SDK Buttons | Buyer approval in the browser, loaded per currency with `data-namespace` | [app/web/static/pay.js#L6](app/web/static/pay.js#L6), [deck.html](app/web/templates/deck.html) |
+| Payments v2: refund capture | Full and partial refunds: withdrawn or expired bills, overfunding, late captures, failed payouts | [client.py#L197](app/paypal/client.py#L197), [funding.py#L243](app/core/funding.py#L243) |
+| Payouts v1: create batch, get batch | Paying billers. One batch with one item per funded bill; the payout note carries the bill ID and customer account number. Polling is the fallback when a webhook is late. | [client.py#L212](app/paypal/client.py#L212), [funding.py#L322](app/core/funding.py#L322) |
+| Vault v3: setup token, payment token | Sponsors save PayPal once for the giving agent and for monthly sponsorships | [client.py#L241](app/paypal/client.py#L241), [main.py vault routes](app/main.py) |
+| Orders v2 with `payment_source.paypal.vault_id` | Merchant-initiated payments by the giving agent and recurring sponsorships, without the sponsor present | [client.py#L135](app/paypal/client.py#L135), [agent.py#L140](app/ai/agent.py#L140), [automation.py#L58](app/core/automation.py#L58) |
+| Webhooks: self-verification | CRC32 of the raw body, `transmission_id|time|webhook_id|crc32` signed with SHA256withRSA, certificate URL restricted to paypal.com hosts | [app/paypal/webhooks.py#L80](app/paypal/webhooks.py#L80) |
+| Webhooks: verify-webhook-signature API | Fallback when the certificate cannot be fetched | [client.py#L268](app/paypal/client.py#L268) |
+| Webhook events handled | `CHECKOUT.ORDER.APPROVED` (server-side capture if the browser never returned), `PAYMENT.CAPTURE.COMPLETED / DENIED / DECLINED / REFUNDED`, `PAYMENT.PAYOUTSBATCH.*`, `PAYMENT.PAYOUTS-ITEM.SUCCEEDED / UNCLAIMED / RETURNED / FAILED / BLOCKED / ...`, `VAULT.PAYMENT-TOKEN.CREATED` | [app/core/webhook_handlers.py#L33](app/core/webhook_handlers.py#L33) |
+| PayPal Agent Toolkit (Python, official) | The support assistant reads live order status through the toolkit's `get_order_details` tool, limited to the signed-in user's own orders | [app/paypal/toolkit.py](app/paypal/toolkit.py), [app/ai/support.py](app/ai/support.py) |
+
+Multi-currency: bills keep their own currency for display, with the sponsor's currency shown alongside. Bills in a currency PayPal supports for cross-border payments (USD, EUR, GBP, MXN, PHP and others) are paid and paid out in that currency. Bills in other currencies (INR, KES, NGN, GHS, ZAR, IDR) settle in USD at an indicative rate shown on the card.
+
+## AI used
+
+All models are open-weight models served by Groq. Every AI feature has a non-AI fallback, and no AI output alone can move money.
+
+| Feature | Model | Fallback |
+|---|---|---|
+| Reading a bill photo into structured fields | `qwen/qwen3.8-27b` (vision), with `openai/gpt-oss-120b` reading the OCR text in parallel | Tesseract OCR and a regex parser |
+| Reading a PDF bill | `openai/gpt-oss-120b` on the PDF text | Regex parser |
+| Visual editing signs (one of the nine checks) | Vision model | Rule checks only |
+| Dignified note from the poster's own words, with consent | `openai/gpt-oss-120b` | Template; redaction runs on both |
+| Big-sponsor filter from plain words | `openai/gpt-oss-120b` | Keyword parser |
+| Giving agent: rules to limits, then choosing bills with reasons | `openai/gpt-oss-120b` | Rule parser and most-urgent-first picker |
+| Support assistant with tool calls | `openai/gpt-oss-120b` | Answers built directly from the user's records |
+| Thank-you polish (optional) | `openai/gpt-oss-120b` | The poster's own text |
+
+Guardrails that live in code, not prompts:
+- **Giving agent caps** ([app/ai/agent.py](app/ai/agent.py)): monthly budget, per-bill cap, categories, countries, maximum risk, verified billers only, never more than a bill still needs. The model proposes; code pays, clamps or refuses, and logs the rule that applied.
+- **Support grounding** ([app/ai/support.py](app/ai/support.py)): the assistant sees only the user's own records, policies and their own PayPal orders. Every amount, date and ID in its answer is checked against the tool output; if anything is not found, the answer is replaced with one built from the records, and a human ticket is offered.
+
+## What is real and what is simulated
+
+| Real | Simulated or limited |
+|---|---|
+| Every PayPal call listed above, against the PayPal sandbox when credentials are set | Until sandbox credentials are configured, the hosted demo uses the built-in PayPal fake ([app/paypal/fake.py](app/paypal/fake.py)) with the same endpoints, payload shapes, signed webhooks and error codes |
+| AI extraction, fraud checks, notes, agent decisions and support answers from live model calls | Seeded open bills and billers are fictional demo data; nothing is pre-paid |
+| Payment state machine, refunds, payouts, webhooks, live updates | Billers are sandbox business accounts; real billers would need onboarding and verification |
+| Live wall counts from the database | Exchange rates for display and non-PayPal currencies are indicative and fixed (dated in the UI) |
+| | No email is sent; receipts and notices live in the in-app inbox |
+
+## Run it locally
+
+Requirements: Python 3.12, and Tesseract for the OCR fallback (`brew install tesseract` or `apt install tesseract-ocr`).
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --no-deps paypal-agent-toolkit==1.11.0
+cp .env.example .env            # add GROQ_API_KEY for AI; leave PayPal empty to use the local fake
+.venv/bin/python -m scripts.seed --reset
+.venv/bin/uvicorn app.main:app --port 8800
+```
+
+Open http://localhost:8800. Without a Groq key the non-AI fallbacks run; without PayPal credentials the local PayPal fake runs.
+
+### Use the real PayPal sandbox
+
+1. On developer.paypal.com, create a sandbox app with Accept payments, Vault (Advanced options, save payment methods), Payouts and Transaction search enabled.
+2. Create sandbox accounts: a Business account for billers (receives payouts) and a Personal account for sponsors.
+3. Set in `.env`: `PAYPAL_MODE=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `BILLER_SANDBOX_EMAIL` (the biller business account), then reseed.
+4. Add a webhook pointing at `https://<your host>/webhooks/paypal` with the events listed above, and set `PAYPAL_WEBHOOK_ID`.
+
+Without a reachable webhook URL (for example on localhost), Billkind still completes every flow: captures are recorded from the capture response and payouts are polled.
+
+### Tests
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+44 tests run in about 6 seconds against a real HTTP server and the PayPal fake. They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, monthly sponsorship, support grounding and escalation, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` runs the approval-free contract steps against the real sandbox.
+
+### Deploy
+
+`modal deploy modal_app.py` runs one always-on container with SQLite backed up to a Modal Volume. Secrets are read from `.env` at deploy time.
+
+## Project layout
+
+```
+app/
+  main.py            routes and pages
+  paypal/            client (SDK and REST), webhook verification, Agent Toolkit wrapper, local PayPal fake
+  core/              state machines, funding and payouts, posting, billers, events (SSE), automation, jobs
+  ai/                intake, fraud, redaction, notes, matching, bulk filter, giving agent, support assistant
+  web/               Jinja templates, CSS, the small pay.js helper
+scripts/             seed data and sample bills
+tests/               unit, integration and contract tests
+DESIGN.md            problem, audience, safety model, state machines, path to production
+```
+
+## Path to production
+
+Billkind runs only in the PayPal sandbox. Going live would need PayPal live approval for Payouts and Vault, KYC for posters and businesses, a regulatory review of holding and paying out funds (a PayPal platform model where the biller is the payee, or a licensed fiscal sponsor), sanctions screening and a data-protection review. Details in [DESIGN.md](DESIGN.md#8-path-to-production-not-claimed-for-the-hackathon).
