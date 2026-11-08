@@ -24,7 +24,7 @@ from .core import automation, events, funding, jobs, notify, posting, states, we
 from .core.money import FX_AS_OF, fmt, to_minor
 from .paypal import fake, webhooks
 from .paypal.client import PayPalError, client
-from .web import auth, views
+from .web import auth, insights_routes, views
 
 log = logging.getLogger("billkind")
 HERE = Path(__file__).resolve().parent
@@ -48,6 +48,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_s
 app.mount("/static", StaticFiles(directory=str(HERE / "web" / "static")), name="static")
 if settings.is_fake:
     app.include_router(fake.router)
+app.include_router(insights_routes.router)
 
 
 @app.exception_handler(auth.LoginRequired)

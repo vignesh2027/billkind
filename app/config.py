@@ -40,6 +40,7 @@ class Settings:
     paypal_base_url_env: str = field(default_factory=lambda: _env("PAYPAL_BASE_URL"))
     paypal_sdk: str = field(default_factory=lambda: _env("PAYPAL_SDK", "apimatic"))  # apimatic or rest
     paypal_webhook_id: str = field(default_factory=lambda: _env("PAYPAL_WEBHOOK_ID"))
+    ag_studio_license_key: str = field(default_factory=lambda: _env("AG_STUDIO_LICENSE_KEY"))
     groq_api_key: str = field(default_factory=lambda: _env("GROQ_API_KEY"))
     ai_text_model: str = field(default_factory=lambda: _env("AI_TEXT_MODEL", "openai/gpt-oss-120b"))
     ai_vision_model: str = field(default_factory=lambda: _env("AI_VISION_MODEL", "qwen/qwen3.8-27b"))
