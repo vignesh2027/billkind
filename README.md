@@ -18,10 +18,10 @@ Open the live demo, choose **Sign in**, and use the one-click demo accounts. No 
 
 | Account | What to try |
 |---|---|
-| Sponsor (`sponsor@billkind.demo`) | **Bills**: swipe right (or press the right arrow) on a bill, pay, and watch the steps tick through to PAID. **My giving** shows every payment with its PayPal order, capture and payout IDs. |
+| Sponsor (`sponsor@billkind.demo`) | **Bills**: swipe right (or press the right arrow) on a bill, pay, and watch the steps tick through to PAID. **My giving** shows every payment with its PayPal order, capture and payout IDs. **Impact studio** turns it into an AG Studio dashboard; ask the assistant for a new view. |
 | Big sponsor (`bigsponsor@billkind.demo`) | **Big-sponsor mode**: type "Clear every school fee bill under 60 USD" and pay them all in one checkout. **Giving agent**: write rules in plain words, confirm the limits, save PayPal, press Run now, and read the decision log. |
 | Poster (`poster@billkind.demo`) | **Post a bill**: download a fresh sample bill from the same page, upload it, check what the AI read, add a few words, and post. Each browser gets its own poster account. |
-| Admin (`admin@billkind.demo`) | Review queue with risk reasons and the original document, biller registry, payout problems, support tickets, the webhook log and the PayPal and AI call logs. |
+| Admin (`admin@billkind.demo`) | Review queue with risk reasons and the original document, biller registry, payout problems, support tickets, the webhook log and the PayPal and AI call logs. The Operations studio (AG Studio) is linked from the console. |
 | Biller (`biller@billkind.demo`) | Payouts received, with the customer account number from each payout note. |
 
 The **Live wall** (no sign-in) shows bills being cleared around the world. Every number on it is counted from transactions recorded by the app; nothing is pre-filled.
@@ -77,6 +77,25 @@ Account numbers are masked to the last four characters, and names, phone numbers
 
 Multi-currency: bills keep their own currency for display, with the sponsor's currency shown alongside. Bills in a currency PayPal supports for cross-border payments (USD, EUR, GBP, MXN, PHP and others) are paid and paid out in that currency. Bills in other currencies (INR, KES, NGN, GHS, ZAR, IDR) settle in USD at an indicative rate shown on the card.
 
+## AG Studio: the Impact studio
+
+Billkind uses **AG Studio 3.1** (AG Grid's embedded analytics component) for two dashboards:
+
+| Page | Who | What it shows |
+|---|---|---|
+| `/insights` (nav: Impact studio) | Sponsors | "What my money did": given after refunds, bills supported, countries, billers paid, the money path, giving by country and by kind of bill, how they gave (swipe, big-sponsor mode, giving agent, monthly sponsorship), a paid ledger with PAID stamps, and every payment with its PayPal order and capture IDs. A second page shows where the giving agent spent its budget: decisions by outcome, the rules that applied and the full decision log. |
+| `/admin/insights` (link in the admin console) | Admin | "Risk, payouts and webhooks": bills by status, average risk score, which fraud signals fire most, payout outcomes, webhook verification, payouts to billers with time to final status, and money movement by currency and source. |
+
+How it is built:
+
+- **Server-scoped data.** [`app/core/insights.py`](app/core/insights.py) builds the Studio data sources (payments, bills, agent decisions; for admins also risk signals, payouts and webhooks) with relationships, field names and formats, and primary keys. A sponsor only ever receives their own rows; no names, account numbers or emails leave the server. Served by `GET /api/insights/data` ([`app/web/insights_routes.py`](app/web/insights_routes.py)).
+- **Built-in reports in code.** The report pages are Studio state JSON in [`app/web/static/insights.js`](app/web/static/insights.js): value KPIs, grouped bar and donut charts, grids, and an empty "My own view" page. Users can rearrange everything in edit mode; their layout is kept in their browser, and "Reset to the built-in report" restores it.
+- **Two custom widgets** registered with `createWidgets`: **Money path** (you, PayPal, billers paid, with "never to the person") and **Paid ledger** (bills with a PAID stamp once the PayPal payout to the biller succeeded). Both load their data through `widgetApi.getData`, so filters and cross-filters apply.
+- **Theme** from the Billkind palette through `studioTheme.withParams` and the chart palette CSS variables.
+- **Live data.** The page listens to Billkind's server-sent events. When PayPal confirms a capture, payout or refund, the page refetches and applies only the changed rows as `applyTransaction` calls on Studio's data engine, so only the affected widgets re-query.
+- **A custom agent in the Studio Agent Framework.** "Ask your impact" in Studio's chat panel is a Billkind agent built with `clientToolRunner`. Each round goes to `POST /api/insights/agent` ([`app/ai/insights_agent.py`](app/ai/insights_agent.py)), which asks `openai/gpt-oss-120b` on Groq for the next step; the key stays on the server and the model sees only a schema summary of the user's own data. The model acts through a custom Studio tool, `place_widget`, defined with `api.defineAiTool` and a shape-validated schema whose field enums come from the live data; Studio executes it in the browser to add the widget. Tool names are allowlisted on the server, rounds are capped, and the reply may not state numbers (the widget shows them).
+- **Licence.** AG Studio is commercial. The 45-day trial key is read from `AG_STUDIO_LICENSE_KEY` and set with `AgStudioLicenseManager.setLicenseKey` at runtime; it is not in the repository. Without it Studio runs with a watermark. The library loads from jsDelivr at a pinned version (`ag-studio@3.1.0`, UMD build) only on these two pages.
+
 ## AI used
 
 All models are open-weight models served by Groq. Every AI feature has a non-AI fallback, and no AI output alone can move money.
@@ -90,6 +109,7 @@ All models are open-weight models served by Groq. Every AI feature has a non-AI 
 | Big-sponsor filter from plain words | `openai/gpt-oss-120b` | Keyword parser |
 | Giving agent: rules to limits, then choosing bills with reasons | `openai/gpt-oss-120b` | Rule parser and most-urgent-first picker |
 | Support assistant with tool calls | `openai/gpt-oss-120b` | Answers built directly from the user's records |
+| Impact studio agent (AG Studio Agent Framework) | `openai/gpt-oss-120b`, falling back to `openai/gpt-oss-20b` on rate limits | Drag-and-drop editing in Studio |
 | Thank-you polish (optional) | `openai/gpt-oss-120b` | The poster's own text |
 
 Guardrails that live in code, not prompts:
@@ -136,7 +156,7 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 .venv/bin/python -m pytest -q
 ```
 
-45 tests run in about 6 seconds against a real HTTP server and the PayPal fake. They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, monthly sponsorship, support grounding and escalation, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
+53 tests run in under a minute against a real HTTP server and the PayPal fake. They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
 
 ### Deploy
 
