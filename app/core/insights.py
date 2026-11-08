@@ -213,7 +213,7 @@ def with_fields(data: dict) -> dict:
     for src in data["sources"]:
         name, key = TABLE_META.get(src["id"], (src["id"], None))
         src["name"] = name
-        ids = list(src["data"][0].keys()) if src["data"] else [k for k in FIELD_META if k in KNOWN_FIELDS.get(src["id"], ())]
+        ids = list(src["data"][0].keys()) if src["data"] else list(KNOWN_FIELDS.get(src["id"], ()))
         fields = []
         for fid in ids:
             label, fmt = FIELD_META.get(fid, (fid.replace("_", " ").capitalize(), "textFormat"))
@@ -236,6 +236,9 @@ KNOWN_FIELDS = {
     "bills": ("bill_id", "category", "country", "country_code", "city", "biller", "status", "due_date", "bill_amount",
               "bill_currency", "settle_currency", "bill_usd", "listed_on", "paid_on", "days_to_paid", "has_thank_you"),
     "agent_decisions": ("decision_id", "bill_id", "run_on", "decision", "paid_usd", "rule", "reason"),
+    "fraud_signals": ("bill_id", "signal", "points"),
+    "payouts": ("payout_item", "bill_id", "status", "currency", "amount", "amount_usd", "sent_on", "minutes_to_final"),
+    "webhooks": ("event_id", "event_type", "received_on", "verified", "method"),
 }
 
 

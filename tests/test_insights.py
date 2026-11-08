@@ -140,3 +140,11 @@ def test_round_cap_forces_a_final_answer(monkeypatch):
 def test_license_key_setting_is_read_from_env():
     assert hasattr(settings, "ag_studio_license_key")
 
+
+
+def test_empty_tables_still_declare_their_fields():
+    data = insights.with_fields({"description": "", "relationships": [], "sources": [
+        {"id": "payments", "data": []}, {"id": "fraud_signals", "data": []}, {"id": "webhooks", "data": []}]})
+    for src in data["sources"]:
+        assert src["fields"], src["id"]
+    assert {f["id"] for f in data["sources"][0]["fields"]} >= {"payment_id", "bill_id", "net_usd"}
