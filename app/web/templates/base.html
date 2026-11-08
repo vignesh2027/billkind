@@ -3,54 +3,122 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Billkind{% endblock %}</title>
+<title>{% block title %}Billkind · Pay a bill, straight to the biller{% endblock %}</title>
 <meta name="description" content="Post a bill you cannot pay. Sponsors pay the biller directly, never the person.">
+<meta name="theme-color" content="#0A1A38">
 <meta name="csrf" content="{{ csrf }}">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/static/favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=4">
+<link rel="preload" href="/static/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/app.css?v=10">
+<script>document.documentElement.classList.add('js');</script>
 {% block head %}{% endblock %}
 </head>
-<body>
-<a class="sr-only" href="#main">Skip to content</a>
-<header class="nav">
-  <div class="wrap">
-    <a class="brand" href="/"><img src="/static/logo.svg" alt="">billkind</a>
-    {% if paypal_mode != 'sandbox' %}<span class="mode" title="Payments run against the local PayPal fake">LOCAL PAYMENTS FAKE</span>{% else %}<span class="mode" title="Real PayPal sandbox, no real money">SANDBOX</span>{% endif %}
-    <nav aria-label="Main">
-      {% set p = request.url.path %}
-      <a href="/live" class="{{ 'on' if p == '/live' }}">Live wall</a>
+{% from "_macros.html" import ui %}
+{% set p = request.url.path %}
+{% macro navlinks() -%}
+  <a href="/live" {% if p == '/live' %}aria-current="page"{% endif %}><span class="live-dot" aria-hidden="true"></span>Live wall</a>
+  {% if user %}
+    {% if user.role in ('sponsor', 'admin') %}
+      <a href="/deck" {% if p == '/deck' %}aria-current="page"{% endif %}>Bills</a>
+      <a href="/sponsor/bulk" {% if p == '/sponsor/bulk' %}aria-current="page"{% endif %}>Big sponsor</a>
+      <a href="/sponsor/agent" {% if p == '/sponsor/agent' %}aria-current="page"{% endif %}>Giving agent</a>
+      <a href="/sponsor" {% if p == '/sponsor' %}aria-current="page"{% endif %}>My giving</a>
+    {% endif %}
+    {% if user.role in ('poster', 'admin') %}
+      <a href="/post" {% if p.startswith('/post') %}aria-current="page"{% endif %}>Post a bill</a>
+      <a href="/me" {% if p == '/me' %}aria-current="page"{% endif %}>My bills</a>
+    {% endif %}
+    {% if user.role == 'biller' %}<a href="/biller" {% if p == '/biller' %}aria-current="page"{% endif %}>Payouts</a>{% endif %}
+    {% if user.role == 'admin' %}<a href="/admin" {% if p == '/admin' %}aria-current="page"{% endif %}>Admin</a>{% endif %}
+    <a href="/help" {% if p == '/help' %}aria-current="page"{% endif %}>Help</a>
+  {% else %}
+    <a href="/how" {% if p == '/how' %}aria-current="page"{% endif %}>How it works</a>
+  {% endif %}
+{%- endmacro %}
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header" data-role="{{ user.role if user else 'guest' }}">
+  <div class="container header-row">
+    <a class="brand" href="/" aria-label="Billkind home"><img src="/static/logo.svg" alt="" width="34" height="34"><span>billkind</span></a>
+    {% if paypal_mode != 'sandbox' %}<span class="env-chip" title="Payments run against the built-in PayPal simulator">Demo payments</span>{% else %}<span class="env-chip" title="Real PayPal sandbox, no real money">Sandbox</span>{% endif %}
+    <nav class="primary-nav" aria-label="Main">{{ navlinks() }}</nav>
+    <div class="header-actions">
       {% if user %}
-        {% if user.role in ('sponsor', 'admin') %}
-          <a href="/deck" class="{{ 'on' if p == '/deck' }}">Bills</a>
-          <a href="/sponsor" class="{{ 'on' if p.startswith('/sponsor') }}">My giving</a>
-        {% endif %}
-        {% if user.role in ('poster', 'admin') %}
-          <a href="/post" class="{{ 'on' if p.startswith('/post') }}">Post a bill</a>
-          <a href="/me" class="{{ 'on' if p == '/me' }}">My bills</a>
-        {% endif %}
-        {% if user.role == 'biller' %}<a href="/biller" class="{{ 'on' if p == '/biller' }}">Payouts</a>{% endif %}
-        {% if user.role == 'admin' %}<a href="/admin" class="{{ 'on' if p == '/admin' }}">Admin</a>{% endif %}
-        <a href="/help" class="{{ 'on' if p == '/help' }}">Help</a>
-        <a href="/inbox" class="{{ 'on' if p == '/inbox' }}">Inbox{% if unread %}<span class="badge">{{ unread }}</span>{% endif %}</a>
-        <form method="post" action="/logout" style="display:inline"><button class="btn ghost small" type="submit">Sign out</button></form>
+        <a class="icon-link{% if p == '/inbox' %} is-current{% endif %}" href="/inbox" aria-label="Inbox{% if unread %}, {{ unread }} unread{% endif %}">{{ ui('inbox') }}<span class="hide-sm">Inbox</span>{% if unread %}<span class="badge-count">{{ unread }}</span>{% endif %}</a>
+        <span class="who hide-md" title="{{ user.email }}"><span class="avatar" aria-hidden="true">{{ (user.role[:1])|upper }}</span><span>{{ user.role|replace('_', ' ')|capitalize }}</span></span>
+        <form method="post" action="/logout" class="hide-sm"><button class="btn secondary small" type="submit">Sign out</button></form>
       {% else %}
-        <a href="/how">How it works</a>
         <a class="btn small" href="/login">Sign in</a>
       {% endif %}
-    </nav>
+      <details class="mobile-menu">
+        <summary aria-label="Open menu">{{ ui('menu') }}</summary>
+        <div class="mobile-panel">
+          <nav aria-label="Mobile">{{ navlinks() }}</nav>
+          {% if user %}<form method="post" action="/logout"><button class="btn secondary block" type="submit">Sign out</button></form>{% endif %}
+        </div>
+      </details>
+    </div>
   </div>
 </header>
-<main id="main"><div class="wrap">{% block main %}{% endblock %}</div></main>
-<footer class="footer"><div class="wrap spread">
-  <span>Billkind pays the biller, never the person. Sandbox only: no real money moves.</span>
-  <span><a href="/how">How it works</a> &middot; <a href="/help">Help</a> &middot; <a href="/live">Live wall</a></span>
-</div></footer>
-<div id="toast-root" aria-live="polite"></div>
+<main id="main" tabindex="-1">{% block main %}{% endblock %}</main>
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <a class="brand on-dark" href="/"><img src="/static/logo-reverse.svg" alt="" width="34" height="34"><span>billkind</span></a>
+      <p>Pay a stranger's bill, straight to the biller. The money never goes to the person, so there is nothing to misuse.</p>
+      <p class="footer-note">Sandbox build for the PayPal AI Hackathon. No real money moves.</p>
+    </div>
+    <nav aria-label="Product">
+      <h2>Product</h2>
+      <a href="/live">Live wall</a><a href="/how">How it works</a><a href="/help">Help and support</a>
+    </nav>
+    <nav aria-label="For sponsors">
+      <h2>For sponsors</h2>
+      <a href="/deck">Pay a bill</a><a href="/sponsor/bulk">Big-sponsor mode</a><a href="/sponsor/agent">Giving agent</a><a href="/sponsor">What my money did</a>
+    </nav>
+    <nav aria-label="For people with a bill">
+      <h2>For people with a bill</h2>
+      <a href="/post">Post a bill</a><a href="/me">Track my bills</a><a href="/how#privacy">Privacy</a>
+    </nav>
+  </div>
+  <div class="container footer-base"><span>Billkind pays the biller, never the person.</span><span>Payments processed in the PayPal sandbox.</span></div>
+</footer>
+<div id="toast-root" class="toast-root" aria-live="polite"></div>
+<script>
+/* Shared motion: reveal on scroll and number count-up. Both skip when reduced motion is preferred. */
+window.BK = (() => {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fmtN = n => Math.round(n).toLocaleString('en-US');
+  function countTo(el, to) {
+    to = Number(to); if (isNaN(to)) return;
+    const from = Number((el.dataset.shown || el.textContent).replace(/[^0-9.]/g, '')) || 0;
+    el.dataset.shown = to;
+    if (reduce || from === to) { el.textContent = fmtN(to); return; }
+    const t0 = performance.now(), dur = 900;
+    const step = t => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = fmtN(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+  const seen = el => {
+    el.classList.add('in');
+    if (el.hasAttribute('data-count')) { const n = el.dataset.count; el.dataset.shown = 0; el.textContent = '0'; countTo(el, n); }
+    el.querySelectorAll && el.querySelectorAll('[data-count]').forEach(c => { const n = c.dataset.count; c.dataset.shown = 0; c.textContent = '0'; countTo(c, n); });
+  };
+  const items = document.querySelectorAll('[data-reveal]');
+  if (!reduce && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { seen(e.target); io.unobserve(e.target); } }), {threshold: .12});
+    items.forEach(el => io.observe(el));
+  } else items.forEach(el => el.classList.add('in'));
+  function toast(msg, kind) {
+    const el = document.createElement('div'); el.className = 'toast' + (kind ? ' ' + kind : ''); el.textContent = msg;
+    document.getElementById('toast-root').appendChild(el); setTimeout(() => el.remove(), 5200);
+  }
+  return {countTo, toast, reduce};
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,28 +1,49 @@
-{% extends "base.html" %}{% block title %}Sign in · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}Sign in · Billkind{% endblock %}
 {% block main %}
-<div class="grid cols-2" style="align-items:start">
-  <div class="panel">
-    <h2>Sign in</h2>
-    {% if error %}<div class="alert err">{{ error }}</div>{% endif %}
-    <form method="post" action="/login">
-      <input type="hidden" name="next" value="{{ next }}">
-      <div class="field"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="username"></div>
-      <div class="field"><label for="pw">Password</label><input id="pw" type="password" name="password" autocomplete="current-password"></div>
-      <button class="btn" type="submit">Sign in</button>
-    </form>
-  </div>
-  <div class="panel">
-    <h2>Try a demo account</h2>
-    <p class="muted">One click, no password. These accounts exist for judges and testers; payments run in the PayPal sandbox.</p>
-    <div class="stack">
-    {% for email, role, what in demo %}
-      <form method="post" action="/login" class="spread panel flat" style="padding:14px">
-        <input type="hidden" name="email" value="{{ email }}"><input type="hidden" name="demo" value="1"><input type="hidden" name="next" value="{{ next }}">
-        <div><strong>{{ role }}</strong><div class="muted" style="font-size:13px">{{ what }} &middot; <span class="mono">{{ email }}</span></div></div>
-        <button class="btn small" type="submit">Continue as {{ role.lower() }}</button>
-      </form>
-    {% endfor %}
+{% set role_icons = {'Sponsor': 'heart', 'Big sponsor': 'layers', 'Poster': 'upload', 'Biller': 'bank', 'Admin': 'shield'} %}
+<div class="auth">
+  <aside class="auth-aside dark">
+    <div>
+      <span class="eyebrow accent">Welcome to Billkind</span>
+      <h1>Every payment goes to a verified biller. Every one.</h1>
+      <p class="lead measure-sm">Sign in to swipe through real bills, clear many at once, post a bill of your own, or see the operations console.</p>
     </div>
+    <ul class="trust-list" style="grid-template-columns:minmax(0,1fr);margin:0">
+      <li>{{ ui('check') }} PayPal checkout in the bill's own currency</li>
+      <li>{{ ui('check') }} One PayPal payout to the biller, with the account number in the note</li>
+      <li>{{ ui('check') }} Receipt, PAID stamp and thank-you, live</li>
+      <li>{{ ui('check') }} Sandbox only: no real money moves</li>
+    </ul>
+  </aside>
+  <div class="auth-main">
+    <section aria-labelledby="demo-title">
+      <div class="spread" style="margin-bottom:16px;align-items:end">
+        <div><h2 id="demo-title" style="font-size:clamp(26px,2.2vw,36px);margin:0">Try a demo account</h2>
+        <p class="muted" style="margin:6px 0 0">One click, no password. These accounts exist for judges and testers.</p></div>
+      </div>
+      <div class="role-grid">
+      {% for email, role, what in demo %}
+        <form method="post" action="/login" class="role-card">
+          <input type="hidden" name="email" value="{{ email }}"><input type="hidden" name="demo" value="1"><input type="hidden" name="next" value="{{ next }}">
+          <div class="row"><span class="icon-tile{{ ' dark' if role == 'Big sponsor' else ' accent' if role == 'Poster' else '' }}">{{ ui(role_icons.get(role, 'user')) }}</span><div><strong>{{ role }}</strong><div class="mono">{{ email }}</div></div></div>
+          <p>{{ what }}</p>
+          <button class="btn{{ ' dark' if role == 'Big sponsor' else ' secondary' if role in ('Biller', 'Admin') else '' }} block" type="submit">Continue as {{ role.lower() }}</button>
+        </form>
+      {% endfor %}
+      </div>
+    </section>
+    <div class="divider">or sign in with email</div>
+    <section aria-labelledby="signin-title" class="card flat" style="max-width:520px">
+      <h2 id="signin-title" style="font-size:20px">Sign in</h2>
+      {% if error %}<div class="alert err" role="alert">{{ ui('alert') }}<span>{{ error }}</span></div>{% endif %}
+      <form method="post" action="/login" class="auth-form">
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="field"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="username"></div>
+        <div class="field"><label for="pw">Password</label><input id="pw" type="password" name="password" autocomplete="current-password"></div>
+        <button class="btn block" type="submit">Sign in</button>
+      </form>
+    </section>
   </div>
 </div>
 {% endblock %}

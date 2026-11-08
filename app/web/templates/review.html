@@ -1,14 +1,25 @@
-{% extends "base.html" %}{% block title %}Check your bill · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui, check %}
+{% block title %}Check your bill · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<h2>Check what we read</h2>
-<p class="muted">Read by {% if ext.source == 'ai' %}an AI model{% elif ext.source == 'ocr' %}text recognition (AI was unavailable){% else %}nobody: please fill it in{% endif %}. Fix anything that is wrong. Changing the amount or biller by hand sends the bill to a person for review.</p>
-{% if error %}<div class="alert err">{{ error }}</div>{% endif %}
-<form method="post" action="/post/{{ bill.id }}" class="grid cols-2" style="align-items:start">
+<section class="page-head poster-hero">
+  <div class="container spread" style="align-items:end">
+    <div>
+      <span class="eyebrow accent">Check what we read</span>
+      <h1>Is this your bill?</h1>
+      <p class="lead measure">Read by {% if ext.source == 'ai' %}an AI model{% elif ext.source == 'ocr' %}text recognition (AI was unavailable){% else %}nobody: please fill it in{% endif %}. Fix anything that is wrong. Changing the amount or biller by hand sends the bill to a person for review.</p>
+    </div>
+    <ol class="tracker" style="min-width:min(420px,100%)" aria-label="Posting progress"><li class="done">Upload</li><li class="now">Check</li><li>Safety checks</li><li>Open for sponsors</li></ol>
+  </div>
+</section>
+<div class="container page-body">
+{% if error %}<div class="alert err" role="alert">{{ ui('alert') }}<span>{{ error }}</span></div>{% endif %}
+<form method="post" action="/post/{{ bill.id }}" class="review-grid" id="review-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="panel">
-    <h3>The bill</h3>
+  <section class="card" aria-labelledby="bill-title">
+    <div class="card-head"><h2 id="bill-title">The bill</h2>{% if ext.source == 'ai' %}<span class="ai-tag">{{ ui('spark') }} Filled by AI</span>{% endif %}</div>
     <div class="field"><label for="biller_name">Biller</label><input id="biller_name" type="text" name="biller_name" value="{{ form.biller_name or bill.biller_name }}" required>
-      <div class="hint">{% if bill.biller_id %}Matched to a verified biller in our registry.{% else %}Not in our verified registry yet. A person will verify the biller's account first.{% endif %}</div></div>
+      <div class="hint">{% if bill.biller_id %}<span class="verified">{{ check() }} Matched to a verified biller in our registry.</span>{% else %}Not in our verified registry yet. A person will verify the biller's account first.{% endif %}</div></div>
     <div class="grid cols-2" style="gap:12px">
       <div class="field"><label for="amount">Amount due</label><input id="amount" type="text" name="amount" inputmode="decimal" value="{{ form.amount or amount }}" required></div>
       <div class="field"><label for="currency">Currency</label><input id="currency" type="text" name="currency" maxlength="3" value="{{ form.currency or bill.currency }}" required></div>
@@ -20,19 +31,58 @@
     <div class="field"><label for="account_reference">Account, student or patient number</label><input id="account_reference" type="text" name="account_reference" value="{{ form.account_reference or ext.account_reference or '' }}" required>
       <div class="hint">Only the biller sees this, so they can credit the right account. Sponsors see the last four characters.</div></div>
     <div class="grid cols-2" style="gap:12px">
-      <div class="field"><label for="city">City</label><input id="city" type="text" name="city" value="{{ form.city or bill.city }}"></div>
-      <div class="field"><label for="country">Country code</label><input id="country" type="text" name="country" maxlength="2" value="{{ form.country or bill.country }}"></div>
+      <div class="field mb-0"><label for="city">City</label><input id="city" type="text" name="city" value="{{ form.city or bill.city }}"></div>
+      <div class="field mb-0"><label for="country">Country code</label><input id="country" type="text" name="country" maxlength="2" value="{{ form.country or bill.country }}"></div>
     </div>
-  </div>
-  <div class="panel">
-    <h3>Your note to sponsors (optional)</h3>
-    <p class="muted" style="font-size:14px">A sentence or two in your own words. We turn it into a short, respectful note and remove names, numbers and addresses. You will see it before sponsors do on your bills page.</p>
+    {% if ext.ocr_chars %}<p class="hint" style="margin-top:16px">Independent text reading found {{ ext.ocr_chars }} characters; it is used to double-check the amount and date.</p>{% endif %}
+  </section>
+  <section class="card" aria-labelledby="note-title">
+    <div class="card-head"><h2 id="note-title">Your note to sponsors</h2><span class="badge neutral">Optional</span></div>
+    <p class="muted" style="font-size:14.5px">A sentence or two in your own words. We turn it into a short, respectful note and remove names, numbers and addresses. You will see it before sponsors do on your bills page.</p>
     <div class="field"><label for="words">In your words</label><textarea id="words" name="words" placeholder="For example: My hours were cut this month and the school fee is due before my next pay.">{{ form.words or '' }}</textarea></div>
     <div class="field"><label for="alias">First name or nickname to show (optional)</label><input id="alias" type="text" name="alias" maxlength="24" value="{{ form.alias or '' }}"></div>
-    <label class="check"><input type="checkbox" name="consent" value="1" required> <span>I agree that a privacy-safe card for this bill, with the note written from my words, is shown to sponsors. I understand the money goes to the biller, not to me.</span></label>
-    <div class="hr"></div>
-    <button class="btn" type="submit">Run the checks and post</button>
-    {% if ext.ocr_chars %}<p class="hint">Independent text reading found {{ ext.ocr_chars }} characters; it is used to double-check the amount and date.</p>{% endif %}
-  </div>
+    <label class="check card sunken" style="padding:16px"><input type="checkbox" name="consent" value="1" required> <span>I agree that a privacy-safe card for this bill, with the note written from my words, is shown to sponsors. I understand the money goes to the biller, not to me.</span></label>
+    <button class="btn lg block" type="submit" style="margin-top:18px">{{ ui('shield') }} Run the checks and post</button>
+  </section>
+  <aside class="preview-col" aria-labelledby="pv-title">
+    <h2 id="pv-title" style="font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px">{{ ui('eye-off') }} What sponsors will see</h2>
+    <article class="bill" aria-label="Preview of your bill card">
+      <div class="bill-body">
+        <div class="bill-head"><span class="cat" aria-hidden="true">{{ ui('receipt') }}</span><div class="bill-title"><span class="bill-where" id="pv-where"></span><strong id="pv-kind"></strong></div><span class="badge neutral" id="pv-due"></span></div>
+        <div class="bill-amount num" id="pv-amount" style="font-size:40px"></div>
+        <div class="bill-biller"><span class="bill-biller-label">Paid directly to</span><strong id="pv-biller"></strong></div>
+        <p class="bill-story" id="pv-story" style="color:var(--text-muted)"></p>
+        <div class="bill-meta"><span class="chip ok">{{ check() }} Checks run when you post</span><span class="chip" id="pv-account"></span></div>
+      </div>
+      <div class="bill-stub"><div class="never">{{ ui('shield') }} Paid to the biller, never to the person</div></div>
+    </article>
+    <div class="redact-legend">
+      <div>{{ ui('check') }} Your name, phone, email and address are never shown</div>
+      <div>{{ ui('check') }} Account number masked to the last four</div>
+      <div>{{ ui('check') }} The note is rewritten from your words; you see it first</div>
+    </div>
+  </aside>
 </form>
+</div>
 {% endblock %}
+{% block scripts %}<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cats = {{ categories|tojson }};
+  const set = (id, t) => { $(id).textContent = t; };
+  function update() {
+    const acc = $('account_reference').value.replace(/\s+/g, '');
+    set('pv-where', [$('city').value, $('country').value.toUpperCase()].filter(Boolean).join(', '));
+    set('pv-kind', cats[$('category').value] || 'Bill');
+    set('pv-amount', ($('amount').value || '0') + ' ' + $('currency').value.toUpperCase());
+    set('pv-biller', $('biller_name').value || 'Biller');
+    set('pv-account', 'Account •••• ' + (acc.slice(-4) || '----'));
+    const d = $('due_date').value ? Math.round((new Date($('due_date').value) - new Date(new Date().toDateString())) / 864e5) : null;
+    set('pv-due', d === null ? 'No due date' : d < 0 ? 'Overdue' : d === 0 ? 'Due today' : 'Due in ' + d + ' day' + (d === 1 ? '' : 's'));
+    const w = $('words').value.trim().replace(/\S*@\S+/g, '[email]').replace(/\+?\d[\d\s-]{5,}\d/g, '[number]');
+    set('pv-story', w ? w.slice(0, 220) : 'Your note appears here, rewritten in a short, respectful way.');
+  }
+  document.getElementById('review-form').addEventListener('input', update);
+  update();
+})();
+</script>{% endblock %}

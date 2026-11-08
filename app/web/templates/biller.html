@@ -1,12 +1,43 @@
-{% extends "base.html" %}{% block title %}Payouts · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui, check %}
+{% block title %}Payouts · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<h2>Payments received</h2>
-<p class="muted">{% for b in billers %}{{ b.name }} ({{ b.paypal_email }}){{ ', ' if not loop.last }}{% endfor %}. Each payout arrives in your PayPal account with the customer's account number in the note.</p>
-<div class="panel"><div class="table-wrap"><table>
-<thead><tr><th>Bill</th><th>Customer account</th><th>Amount</th><th>PayPal status</th><th>Payout item</th></tr></thead><tbody>
-{% for i in items %}<tr><td>{{ i.bill_id }}<div class="muted" style="font-size:12px">{{ category_label(i.category) }}, due {{ i.due_date }}</div></td><td class="mono">{{ i.account_private }}</td><td><strong>{{ fmt(i.amount_minor, i.currency) }}</strong></td>
-<td>{% if i.status == 'SUCCESS' %}<span class="pill ok">received</span>{% elif i.status == 'PENDING' %}<span class="pill">pending</span>{% else %}<span class="pill danger">{{ i.status|lower }}</span>{% endif %}</td><td class="mono" style="font-size:12px">{{ i.payout_item_id or '...' }}</td></tr>
-{% else %}<tr><td colspan="5" class="muted">No payouts yet.</td></tr>{% endfor %}
-</tbody></table></div></div>
+{% set ok = items|selectattr('status', 'equalto', 'SUCCESS')|list %}
+{% set pending = items|selectattr('status', 'equalto', 'PENDING')|list %}
+{% set ns = namespace(tot={}) %}
+{% for i in ok %}{% set _ = ns.tot.update({i.currency: ns.tot.get(i.currency, 0) + i.amount_minor}) %}{% endfor %}
+<section class="page-head">
+  <div class="container spread" style="align-items:end">
+    <div>
+      <span class="eyebrow">{{ ui('bank') }} Biller portal</span>
+      <h1>Payments received</h1>
+      <p class="lead measure">Each payout arrives in your PayPal account with the customer's account number in the note, so you can credit the right account. No invoices to chase, nothing else to do.</p>
+    </div>
+    <div class="row">{% for b in billers[:3] %}<span class="badge neutral" title="{{ b.paypal_email }}">{{ b.name }}</span>{% endfor %}{% if billers|length > 3 %}<span class="badge neutral">and {{ billers|length - 3 }} more</span>{% endif %}</div>
+  </div>
+</section>
+<div class="container page-body stack">
+  <div class="stat-grid">
+    <div class="stat"><span class="stat-value md num">{{ ok|length }}</span><span class="stat-label">payouts received</span></div>
+    <div class="stat"><span class="stat-value md num">{{ pending|length }}</span><span class="stat-label">on the way</span></div>
+    <div class="stat"><span class="stat-value md num">{{ items|length - ok|length - pending|length }}</span><span class="stat-label">need attention</span></div>
+    <div class="stat"><span class="stat-value sm num">{% for c, m in ns.tot.items() %}{{ fmt(m, c) }}{{ ' · ' if not loop.last }}{% else %}0{% endfor %}</span><span class="stat-label">received, by currency</span></div>
+  </div>
+  <div class="dash">
+  <section class="card" aria-labelledby="pay-title">
+    <div class="card-head"><h2 id="pay-title">Payout history</h2><span class="badge ok"><span class="live-dot" aria-hidden="true"></span> Updates live</span></div>
+    <div class="table-wrap"><table>
+    <thead><tr><th>Bill</th><th>Customer account</th><th>Amount</th><th>PayPal status</th><th>Payout item</th></tr></thead><tbody>
+    {% for i in items %}<tr><td><strong>{{ i.bill_id }}</strong><div class="muted" style="font-size:12.5px">{{ category_label(i.category) }}, due {{ i.due_date }}</div></td><td class="mono">{{ i.account_private }}</td><td><strong class="num">{{ fmt(i.amount_minor, i.currency) }}</strong></td>
+    <td>{% if i.status == 'SUCCESS' %}<span class="badge ok">{{ check() }} Received</span>{% elif i.status == 'PENDING' %}<span class="badge">Pending</span>{% else %}<span class="badge danger">{{ i.status|lower|capitalize }}</span>{% endif %}</td><td class="mono" style="font-size:12.5px">{{ i.payout_item_id or 'waiting' }}</td></tr>
+    {% else %}<tr><td colspan="5"><div class="empty"><span class="icon-tile">{{ ui('bank') }}</span><p class="muted mb-0">No payouts yet. When sponsors cover a bill for one of your customers, the payout appears here.</p></div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="card flat" aria-labelledby="acct-title">
+    <div class="card-head"><h2 id="acct-title">Your PayPal accounts</h2><span class="badge neutral">{{ billers|length }}</span></div>
+    <ul class="acct-list">{% for b in billers %}<li><div style="min-width:0"><strong>{{ b.name }}</strong><span class="mono">{{ b.paypal_email }}</span></div>{% if b.verified %}<span class="badge ok">{{ check() }} Verified</span>{% else %}<span class="badge warn">Waiting</span>{% endif %}</li>{% endfor %}</ul>
+  </section>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}<script>const es=new EventSource('/events/stream');es.addEventListener('message',()=>setTimeout(()=>location.reload(),500));es.addEventListener('paid',()=>setTimeout(()=>location.reload(),500));</script>{% endblock %}

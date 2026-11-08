@@ -1,74 +1,95 @@
-{% extends "base.html" %}{% from "_macros.html" import billcard %}
+{% extends "base.html" %}{% from "_macros.html" import billcard, ui, icon %}
 {% block title %}Bills · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<div class="deck-wrap">
-  <section aria-labelledby="deck-title">
-    <div class="spread" style="margin-bottom:16px">
-      <div><h2 id="deck-title" style="margin:0">Bills waiting for a sponsor</h2>
-      <span class="muted">Drag right to pay, left to pass. Or use <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> and the buttons.</span></div>
+<div class="container deck-page">
+  <aside class="deck-rail left" aria-label="About this deck">
+    <div>
+      <span class="eyebrow">{{ ui('swipe') }} Sponsor deck</span>
+      <h1 id="deck-title">Bills waiting for a sponsor</h1>
+      <p class="count-pill" style="margin:10px 0 0"><strong id="deck-count">{{ cards|length }}</strong> verified bills in your deck, most urgent first</p>
     </div>
-    <div class="deck" id="deck" tabindex="0" aria-describedby="deck-help">
-      {% for c in cards|reverse %}{{ billcard(c) }}{% endfor %}
-      <div class="panel empty" id="deck-empty" {% if cards %}hidden{% endif %}>
-        <h3>You have seen every open bill</h3>
-        <p class="muted">New bills arrive all the time. Watch the live wall, or bring passed bills back.</p>
-        <div class="row" style="justify-content:center"><button class="btn ghost" id="reset-passes">Show passed bills again</button><a class="btn" href="/live">Live wall</a></div>
+    <div class="rail-card">
+      <h2>How to choose</h2>
+      <p>Drag the card right to pay or left to pass. Or use the buttons, or the arrow keys.</p>
+      <div class="keys"><kbd aria-label="Left arrow key">{{ ui('arrow-left') }}</kbd> pass <kbd aria-label="Right arrow key" style="margin-left:8px">{{ ui('arrow') }}</kbd> pay</div>
+    </div>
+    <div class="rail-card dark rail-extra">
+      <h2>Where your money goes</h2>
+      <p>Straight to the verified biller's PayPal account in one payout, with the customer's account reference. Never to the person who posted.</p>
+      <p class="mb-0">If a bill is withdrawn, expires or another sponsor covers it first, PayPal refunds you automatically.</p>
+    </div>
+  </aside>
+
+  <section class="deck-center" aria-labelledby="deck-title">
+    <div class="deck-stage">
+      <div class="deck" id="deck" tabindex="0" aria-describedby="deck-help" aria-label="Bill cards. Press the right arrow to pay the top bill, the left arrow to pass.">
+        {% for c in cards|reverse %}{{ billcard(c) }}{% endfor %}
+        <div class="deck-empty" id="deck-empty" {% if cards %}hidden{% endif %}>
+          <span class="icon-tile ok">{{ ui('check') }}</span>
+          <h2 style="font-size:22px;margin:0">You have seen every open bill</h2>
+          <p class="muted">New bills arrive all the time. Watch the live wall, or bring passed bills back.</p>
+          <div class="row" style="justify-content:center"><button class="btn secondary" id="reset-passes">Show passed bills again</button><a class="btn" href="/live">Live wall</a></div>
+        </div>
       </div>
     </div>
     <p id="deck-help" class="sr-only">Focus the card stack, then press the right arrow to pay the top bill or the left arrow to pass.</p>
     <div class="deck-actions" {% if not cards %}hidden{% endif %} id="deck-actions">
-      <button class="round" id="btn-pass" aria-label="Pass on this bill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--text-muted)" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-      <button class="round pay" id="btn-pay" aria-label="Pay this bill"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+      <div class="deck-action"><button class="round pass" id="btn-pass" aria-label="Pass on this bill">{{ ui('x') }}</button><span aria-hidden="true">Pass</span></div>
+      <div class="deck-action"><button class="round pay" id="btn-pay" aria-label="Pay this bill">{{ ui('check') }}</button><span aria-hidden="true">Pay this bill</span></div>
     </div>
     <div id="sr-status" class="sr-only" aria-live="polite"></div>
   </section>
-  <aside class="stack">
-    <div class="panel">
-      <h3>Where your money goes</h3>
-      <p style="font-size:14px">Straight to the verified biller's PayPal account in one payout, with the customer's account reference. Never to the person who posted.</p>
-      <p style="font-size:14px" class="muted">If a bill is withdrawn, expires or another sponsor covers it first, PayPal refunds you automatically.</p>
+
+  <aside class="deck-rail right" aria-label="Up next and more ways to give">
+    <div class="rail-card">
+      <h2>Up next</h2>
+      <ul class="upnext" id="upnext">
+        {% for c in cards %}<li data-id="{{ c.id }}">{{ icon(c.category, 'sm') }}<div style="min-width:0"><strong>{{ c.category_label }}, {{ c.city or c.country_name }}</strong><span>{{ c.due }}</span></div><span class="amt">{{ c.left or c.settle_amount }}</span></li>{% endfor %}
+      </ul>
+      <p class="muted" id="upnext-empty" style="font-size:14px;margin:8px 0 0" hidden>Nothing else waiting right now.</p>
     </div>
-    <div class="panel">
-      <h3>Clear many at once</h3>
-      <p style="font-size:14px">Pick a filter, like every school-fee bill under 50 USD, and pay them all in one checkout.</p>
-      <a class="btn ghost small" href="/sponsor/bulk">Big-sponsor mode</a>
-    </div>
-    <div class="panel">
-      <h3>Let an agent give for you</h3>
-      <p style="font-size:14px">Set a budget and rules in plain words. Caps are enforced in code.</p>
-      <a class="btn ghost small" href="/sponsor/agent">Giving agent</a>
-    </div>
+    <a class="rail-link" href="/sponsor/bulk"><span class="icon-tile dark">{{ ui('layers') }}</span><div><strong>Clear many at once</strong><span>Every school fee under 50 USD, in one checkout</span></div>{{ ui('arrow') }}</a>
+    <a class="rail-link" href="/sponsor/agent"><span class="icon-tile">{{ ui('robot') }}</span><div><strong>Let an agent give for you</strong><span>Your budget and rules, caps enforced in code</span></div>{{ ui('arrow') }}</a>
+    <a class="rail-link" href="/sponsor"><span class="icon-tile ok">{{ ui('receipt') }}</span><div><strong>What my money did</strong><span>Receipts, payouts and thank-you notes</span></div>{{ ui('arrow') }}</a>
   </aside>
 </div>
 
 <div class="sheet-bg" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
   <div class="sheet">
-    <div class="spread"><h2 id="sheet-title" style="margin:0">Pay this bill</h2><button class="btn ghost small" id="sheet-close" aria-label="Close">Close</button></div>
-    <div id="sheet-bill" class="muted" style="margin:6px 0 4px"></div>
-    <div id="pay-step">
-      <div class="amounts" id="amounts" role="radiogroup" aria-label="Amount"></div>
-      <div class="field"><label for="custom">Or enter an amount (<span id="cur-label"></span>)</label><input id="custom" type="number" min="1" step="0.01" inputmode="decimal"></div>
-      <div id="pay-error" class="alert err" hidden></div>
-      <div id="pp-buttons"></div>
-      {% if paypal_mode != 'sandbox' %}
-      <button class="btn" id="fake-pay" style="width:100%">Pay with the sandbox simulator</button>
-      <p class="hint">This deployment uses the local PayPal fake (no credentials configured). With sandbox credentials, the official PayPal buttons appear here.</p>
-      {% endif %}
-    </div>
-    <div id="done-step" hidden>
-      <div style="position:relative">
-        <div class="alert ok" id="done-msg">Payment captured.</div>
-        <span class="stamp pop" id="done-stamp" hidden>PAID</span>
+    <div class="sheet-top"><h2 id="sheet-title">Pay this bill</h2><button class="btn secondary small" id="sheet-close" aria-label="Close">{{ ui('x') }} Close</button></div>
+    <div class="sheet-content">
+      <div class="sheet-summary"><span class="icon-tile">{{ ui('receipt') }}</span><div id="sheet-bill"></div></div>
+      <div id="pay-step" class="stack-sm" style="gap:18px">
+        <div>
+          <div class="spread" style="margin-bottom:10px"><strong>Choose an amount</strong><span class="muted" style="font-size:13px">Several sponsors can pool</span></div>
+          <div class="amounts" id="amounts" role="radiogroup" aria-label="Amount"></div>
+        </div>
+        <div class="field mb-0"><label for="custom">Or enter an amount (<span id="cur-label"></span>)</label><input id="custom" type="number" min="1" step="0.01" inputmode="decimal"></div>
+        <div id="pay-error" class="alert err" role="alert" hidden></div>
+        <div id="pp-buttons" class="pay-row"></div>
+        {% if paypal_mode != 'sandbox' %}
+        <button class="btn lg block" id="fake-pay">Pay with the sandbox simulator</button>
+        <p class="hint" style="margin:0">This deployment uses the local PayPal simulator (no credentials configured). With sandbox credentials, the official PayPal buttons appear here.</p>
+        {% endif %}
+        <div class="trust-note">{{ ui('shield') }}<span>PayPal sends this money to the verified biller in one payout. It never goes to the person who posted the bill. If the bill cannot be paid, you are refunded automatically.</span></div>
       </div>
-      <ol class="steps" id="steps">
-        <li class="done" data-step="captured"><span class="dot"></span><span>PayPal payment captured <span class="mono" id="cap-id"></span></span></li>
-        <li data-step="funded"><span class="dot"></span><span id="funded-label">Bill fully funded</span></li>
-        <li data-step="payout_sent"><span class="dot"></span><span>Payout sent to the biller</span></li>
-        <li data-step="paid"><span class="dot"></span><span>Biller confirmed paid</span></li>
-        <li data-step="thanks"><span class="dot"></span><span>Thank-you from the household</span></li>
-      </ol>
-      <div id="thanks" class="thanks" hidden></div>
-      <div class="row" style="margin-top:16px"><button class="btn" id="next-bill">Next bill</button><a class="btn ghost" href="/sponsor">See what my money did</a></div>
+      <div id="done-step" hidden>
+        <div class="done-hero">
+          <div class="alert ok" id="done-msg">Payment captured.</div>
+          <span class="stamp pop" id="done-stamp" hidden>PAID</span>
+        </div>
+        <h3 style="margin:22px 0 14px;font-size:16px">Follow your money</h3>
+        <ol class="steps" id="steps">
+          <li class="done" data-step="captured"><span class="dot"></span><span>PayPal payment captured <span class="mono" id="cap-id"></span></span></li>
+          <li data-step="funded"><span class="dot"></span><span id="funded-label">Bill fully funded</span></li>
+          <li data-step="payout_sent"><span class="dot"></span><span>Payout sent to the biller</span></li>
+          <li data-step="paid"><span class="dot"></span><span>Biller confirmed paid</span></li>
+          <li data-step="thanks"><span class="dot"></span><span>Thank-you from the household</span></li>
+        </ol>
+        <div id="thanks" class="thanks" style="margin-top:16px" hidden></div>
+        <div class="row" style="margin-top:22px"><button class="btn" id="next-bill">Next bill</button><a class="btn secondary" href="/sponsor">See what my money did</a></div>
+      </div>
     </div>
   </div>
 </div>
@@ -79,7 +100,7 @@
   const CSRF = "{{ csrf }}", MODE = "{{ paypal_mode }}", CLIENT_ID = "{{ client_id }}";
   const deck = document.getElementById('deck'), sheet = document.getElementById('sheet');
   const sr = document.getElementById('sr-status');
-  let current = null, amount = 0, orderBill = null, payCurrency = 'USD';
+  let current = null, amount = 0, orderBill = null, payCurrency = 'USD', lastFocus = null;
   const dec = c => ['JPY','HUF','TWD'].includes(c) ? 0 : 2;
   const fmt = (m, c) => (m / Math.pow(10, dec(c))).toLocaleString(undefined, {minimumFractionDigits: dec(c), maximumFractionDigits: dec(c)}) + ' ' + c;
   const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF': CSRF}, body: JSON.stringify(body || {})});
@@ -89,6 +110,14 @@
     document.getElementById('deck-empty').hidden = !!t;
     document.getElementById('deck-actions').hidden = !t;
     if (t) sr.textContent = t.getAttribute('aria-label');
+    const ids = new Set([...deck.querySelectorAll('.bill')].map(b => b.dataset.id));
+    document.getElementById('deck-count').textContent = ids.size;
+    let shown = 0;
+    document.querySelectorAll('#upnext li').forEach(li => {
+      const show = ids.has(li.dataset.id) && (!t || li.dataset.id !== t.dataset.id) && shown < 4;
+      li.classList.toggle('gone', !show); if (show) shown++;
+    });
+    document.getElementById('upnext-empty').hidden = shown > 0;
   };
   function fling(card, dir) {
     card.style.transform = `translateX(${dir * 140}%) rotate(${dir * 18}deg)`;
@@ -102,7 +131,7 @@
   }
   function openPay() {
     const t = top(); if (!t) return;
-    current = t; orderBill = t.dataset.id; payCurrency = t.dataset.settle;
+    current = t; orderBill = t.dataset.id; payCurrency = t.dataset.settle; lastFocus = document.activeElement;
     const left = parseInt(t.dataset.left, 10);
     document.getElementById('sheet-bill').textContent = t.getAttribute('aria-label') + '. Still needed: ' + fmt(left, payCurrency) + '.';
     document.getElementById('cur-label').textContent = payCurrency;
@@ -119,6 +148,8 @@
     document.getElementById('pay-step').hidden = false;
     document.getElementById('done-step').hidden = true;
     document.getElementById('pay-error').hidden = true;
+    document.getElementById('done-stamp').hidden = true;
+    document.getElementById('thanks').hidden = true;
     sheet.classList.add('open');
     renderButtons();
     setTimeout(() => (document.getElementById('fake-pay') || document.getElementById('custom')).focus(), 50);
@@ -146,7 +177,7 @@
     document.getElementById('pay-step').hidden = true;
     document.getElementById('done-step').hidden = false;
     document.getElementById('cap-id').textContent = data.capture_id ? '(' + data.capture_id + ')' : '';
-    document.getElementById('done-msg').textContent = 'Thank you. PayPal captured your payment. Watch it reach the biller:';
+    document.getElementById('done-msg').textContent = 'Thank you. PayPal captured your payment. Watch it reach the biller.';
     document.querySelectorAll('#steps li').forEach(li => { if (li.dataset.step !== 'captured') li.className = ''; });
     if (data.funded && data.funded.includes(orderBill)) mark('funded'); else {
       document.getElementById('funded-label').textContent = 'Waiting for other sponsors to cover the rest';
@@ -158,6 +189,7 @@
       if (b.status === 'PAYOUT_SENT') mark('payout_sent');
       if (b.status === 'PAID') mark('paid');
     });
+    document.getElementById('next-bill').focus();
   }
   function mark(step) {
     const order = ['captured', 'funded', 'payout_sent', 'paid', 'thanks'];
@@ -236,12 +268,22 @@
   };
   deck.addEventListener('pointerup', end); deck.addEventListener('pointercancel', end);
   document.addEventListener('keydown', e => {
-    if (sheet.classList.contains('open')) { if (e.key === 'Escape') closeSheet(); return; }
-    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (sheet.classList.contains('open')) {
+      if (e.key === 'Escape') closeSheet();
+      if (e.key === 'Tab') { // keep focus inside the sheet
+        const f = [...sheet.querySelectorAll('button, [href], input, iframe')].filter(x => !x.closest('[hidden]') && x.offsetParent !== null);
+        if (f.length) { const first = f[0], last = f[f.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
+      }
+      return;
+    }
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
     if (e.key === 'ArrowRight') { e.preventDefault(); openPay(); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); pass(); }
   });
-  function closeSheet() { sheet.classList.remove('open'); deck.focus(); }
+  function closeSheet() { sheet.classList.remove('open'); (deck.isConnected ? deck : document.body).focus(); }
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
   document.getElementById('btn-pass').onclick = pass;
   document.getElementById('btn-pay').onclick = openPay;
   document.getElementById('sheet-close').onclick = closeSheet;

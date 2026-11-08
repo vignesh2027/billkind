@@ -1,28 +1,69 @@
-{% extends "base.html" %}{% block title %}How it works · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}How it works · Billkind{% endblock %}
 {% block main %}
-<div style="max-width:820px">
-<h1>How Billkind works</h1>
-<p class="lead" style="font-size:18px">Billkind turns a joke about strangers paying your bills into something safe: sponsors pay the biller directly, so there is nothing to steal and nothing to misuse.</p>
-<h2 style="margin-top:28px">The one rule</h2>
-<p>Money only moves to a verified biller's PayPal account: the school, clinic, utility or landlord on the bill. It never goes to the person who posted. The worst a dishonest poster could do is get someone's real bill paid.</p>
-<h2 style="margin-top:28px">Nine checks on every bill</h2>
-<ol>
-<li>The biller is in our verified registry, with a PayPal account confirmed by a person.</li>
-<li>The file is not saved by photo or document editing software.</li>
-<li>The image shows no visual signs of editing.</li>
-<li>Two independent readings (an AI model and plain text recognition) agree on the amount and date.</li>
-<li>Line items add up to the total.</li>
-<li>The amount is typical for that kind of bill.</li>
-<li>The due date makes sense.</li>
-<li>It is not a duplicate, by file, by image similarity, or by account and amount.</li>
-<li>The poster is not posting too many bills or too much money at once.</li>
-</ol>
-<p>Low-risk bills go live automatically. Anything else waits for a person. Hard failures, like a bill that was already paid, are refused with the reason shown.</p>
-<h2 style="margin-top:28px">Privacy</h2>
-<p>Sponsors see the kind of bill, the city, the amount, the due date, the last four characters of the account number and a short note written from the poster's own words with their consent. Names, numbers and addresses are removed. Only the biller receives the full account number, inside the PayPal payout note.</p>
-<h2 style="margin-top:28px">Refunds</h2>
-<p>If a bill is withdrawn, reaches its due date before it is covered, cannot be paid out to the biller, or another sponsor covers it first, Billkind refunds you through PayPal automatically. You can see each refund on your giving page.</p>
-<h2 style="margin-top:28px">Sandbox only</h2>
-<p>This is a hackathon build. Every payment runs in the PayPal sandbox and no real money moves.</p>
-</div>
+<section class="how-hero">
+  <div class="container section tight">
+    <span class="eyebrow">How Billkind works</span>
+    <h1 class="display" style="max-width:16ch">A joke about strangers paying your bills, made safe.</h1>
+    <p class="lead measure">Sponsors pay the biller directly, so there is nothing to steal and nothing to misuse. Here is every rule that makes that true.</p>
+    <nav class="row" aria-label="On this page" style="margin-top:24px">
+      <a class="chip-btn" href="#rule">The one rule</a><a class="chip-btn" href="#checks">Nine checks</a><a class="chip-btn" href="#privacy">Privacy</a><a class="chip-btn" href="#refunds">Refunds</a><a class="chip-btn" href="#sandbox">Sandbox</a>
+    </nav>
+  </div>
+</section>
+
+<section class="section dark deep" id="rule" aria-labelledby="rule-title">
+  <div class="container split">
+    <div><span class="eyebrow accent">{{ ui('shield') }} The one rule</span><h2 id="rule-title">Money only moves to a verified biller.</h2></div>
+    <div>
+      <p class="lead">Money only moves to a verified biller's PayPal account: the school, clinic, utility or landlord on the bill. It never goes to the person who posted. The worst a dishonest poster could do is get someone's real bill paid.</p>
+      <div class="grid cols-3" style="margin-top:28px">
+        <div class="card glass"><span class="icon-tile">{{ ui('heart') }}</span><h3 style="margin-top:14px">You pay</h3><p class="muted mb-0">PayPal checkout, in the bill's currency when PayPal supports it.</p></div>
+        <div class="card glass"><span class="icon-tile">{{ ui('lock') }}</span><h3 style="margin-top:14px">Billkind checks</h3><p class="muted mb-0">The bill is covered, the biller is verified, the amount is right.</p></div>
+        <div class="card glass"><span class="icon-tile">{{ ui('bank') }}</span><h3 style="margin-top:14px">Biller paid</h3><p class="muted mb-0">One PayPal payout with the customer account number in the note.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="checks" aria-labelledby="checks-title">
+  <div class="container">
+    <div class="section-head">
+      <div><span class="eyebrow">Fraud checks</span><h2 id="checks-title">Nine checks on every bill.</h2></div>
+      <p class="lead">Low-risk bills go live automatically. Anything else waits for a person. Hard failures, like a bill that was already paid, are refused with the reason shown.</p>
+    </div>
+    <ol class="check-grid">
+      <li>The biller is in our verified registry, with a PayPal account confirmed by a person.</li>
+      <li>The file is not saved by photo or document editing software.</li>
+      <li>The image shows no visual signs of editing.</li>
+      <li>Two independent readings (an AI model and plain text recognition) agree on the amount and date.</li>
+      <li>Line items add up to the total.</li>
+      <li>The amount is typical for that kind of bill.</li>
+      <li>The due date makes sense.</li>
+      <li>It is not a duplicate, by file, by image similarity, or by account and amount.</li>
+      <li>The poster is not posting too many bills or too much money at once.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="section band-tint" id="privacy" aria-labelledby="privacy-title">
+  <div class="container split">
+    <div><span class="eyebrow">{{ ui('eye-off') }} Privacy</span><h2 id="privacy-title">Sponsors see the bill, not the person.</h2></div>
+    <div class="grid cols-2">
+      <div class="card flat"><h3>What sponsors see</h3><p class="muted mb-0">The kind of bill, the city, the amount, the due date, the last four characters of the account number, and a short note written from the poster's own words with their consent.</p></div>
+      <div class="card flat"><h3>What nobody sees</h3><p class="muted mb-0">Names, phone numbers, email addresses and street addresses are removed. Only the biller receives the full account number, inside the PayPal payout note.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="refunds" aria-labelledby="refunds-title">
+  <div class="container split">
+    <div><span class="eyebrow">{{ ui('refund') }} Refunds</span><h2 id="refunds-title">If a bill cannot be paid, you get your money back.</h2></div>
+    <div>
+      <p class="lead">If a bill is withdrawn, reaches its due date before it is covered, cannot be paid out to the biller, or another sponsor covers it first, Billkind refunds you through PayPal automatically. You can see each refund on your giving page.</p>
+      <div class="card sunken" id="sandbox" style="margin-top:24px"><h3>Sandbox only</h3><p class="muted mb-0">This is a hackathon build. Every payment runs in the PayPal sandbox and no real money moves.</p></div>
+      <div class="row" style="margin-top:28px"><a class="btn lg" href="/login?next=/deck">Start paying bills</a><a class="btn lg secondary" href="/login?next=/post">Post a bill</a></div>
+    </div>
+  </div>
+</section>
 {% endblock %}

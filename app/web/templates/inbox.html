@@ -1,14 +1,32 @@
-{% extends "base.html" %}{% block title %}Inbox · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}Inbox · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<h2>Inbox</h2>
-<p class="muted">Receipts, payout confirmations, thank-you notes and notices. Billkind stores these in the app; the hackathon build sends no email.</p>
-<div class="stack">
-{% for m in msgs %}
-  <div class="panel flat">
-    <div class="spread"><strong>{{ m.subject }}</strong><span class="pill {{ 'violet' if m.kind in ('receipt','thanks','paid','payout') else 'grey' }}">{{ m.kind }}</span></div>
-    <p style="white-space:pre-line;margin:8px 0 0">{{ m.body }}</p>
-    {% if m.contribution_id %}<a href="/receipts/{{ m.contribution_id }}">Open receipt</a>{% endif %}
+{% set icons = {'receipt': 'receipt', 'thanks': 'heart', 'paid': 'check', 'payout': 'bank', 'refund': 'refund', 'notice': 'info'} %}
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">{{ ui('inbox') }} Inbox</span>
+    <h1>Receipts and updates</h1>
+    <p class="lead measure">Receipts, payout confirmations, thank-you notes and notices. Billkind keeps these in the app; the hackathon build sends no email.</p>
   </div>
-{% else %}<div class="panel empty">Nothing here yet.</div>{% endfor %}
+</section>
+<div class="container page-body">
+  {% if msgs %}
+  <div class="msg-list">
+  {% for m in msgs %}
+    <article class="msg">
+      <span class="icon-tile{{ ' ok' if m.kind in ('paid', 'payout') else ' accent' if m.kind == 'thanks' else '' }}">{{ ui(icons.get(m.kind, 'info')) }}</span>
+      <div style="min-width:0">
+        <h2>{{ m.subject }}</h2>
+        <p>{{ m.body }}</p>
+        {% if m.contribution_id %}<a class="btn secondary small" style="margin-top:12px" href="/receipts/{{ m.contribution_id }}">{{ ui('receipt') }} Open receipt</a>{% endif %}
+      </div>
+      <span class="badge {{ 'ok' if m.kind in ('paid', 'payout') else 'accent' if m.kind == 'thanks' else 'neutral' if m.kind == 'notice' else '' }}">{{ m.kind }}</span>
+    </article>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div class="card empty"><span class="icon-tile">{{ ui('inbox') }}</span><h2 style="font-size:22px">Nothing here yet</h2><p class="muted mb-0">Receipts and updates arrive here as your bills and payments move.</p></div>
+  {% endif %}
 </div>
 {% endblock %}

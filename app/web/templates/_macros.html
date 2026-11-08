@@ -1,5 +1,5 @@
-{% macro icon(cat) -%}
-<span class="cat" aria-hidden="true">
+{% macro icon(cat, size='') -%}
+<span class="cat {{ size }} cat-{{ cat }}" aria-hidden="true">
 {%- if cat == 'electricity' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
 {%- elif cat == 'water' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z"/></svg>
 {%- elif cat == 'school_fees' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M2 9l10-5 10 5-10 5-10-5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/></svg>
@@ -11,29 +11,91 @@
 </span>
 {%- endmacro %}
 
-{% macro check() -%}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>{%- endmacro %}
+{% macro check() -%}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>{%- endmacro %}
+
+{# Interface icons. Decorative: always aria-hidden; give the parent a text label. #}
+{% macro ui(name) -%}
+<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{%- if name == 'inbox' %}<path d="M3 13l3-8h12l3 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/><path d="M3 13h5l1 3h6l1-3h5"/>
+{%- elif name == 'menu' %}<path d="M4 7h16M4 12h16M4 17h16"/>
+{%- elif name == 'shield' %}<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>
+{%- elif name == 'bank' %}<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 20h18"/>
+{%- elif name == 'user' %}<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>
+{%- elif name == 'users' %}<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5.5 6.5-5.5s5.5 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .7 3.3 2.6 3.8 5.5"/>
+{%- elif name == 'scan' %}<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/>
+{%- elif name == 'swipe' %}<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5V10a1.5 1.5 0 0 1 3 0v2"/><path d="M14 11a1.5 1.5 0 0 1 3 0v1.5"/><path d="M17 12a1.5 1.5 0 0 1 3 0v3.5A5.5 5.5 0 0 1 14.5 21h-1.8a5 5 0 0 1-3.9-1.9L5.3 14.6a1.5 1.5 0 0 1 2.4-1.9L8 13"/>
+{%- elif name == 'check' %}<path d="M5 12l5 5 9-10"/>
+{%- elif name == 'x' %}<path d="M6 6l12 12M18 6L6 18"/>
+{%- elif name == 'globe' %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>
+{%- elif name == 'bolt' %}<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>
+{%- elif name == 'spark' %}<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>
+{%- elif name == 'robot' %}<rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16.5h6"/>
+{%- elif name == 'chat' %}<path d="M4 5h16v11H9l-5 4V5z"/><path d="M8 9.5h8M8 12.5h5"/>
+{%- elif name == 'receipt' %}<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/><path d="M9 8h6M9 12h6"/>
+{%- elif name == 'lock' %}<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+{%- elif name == 'eye-off' %}<path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6-.5 1-1.4 2.3-2.7 3.5M6.3 7.6C4.4 8.9 3.1 10.7 2.5 12c1 2 4.5 6 9.5 6 1.5 0 2.9-.4 4.1-1"/><path d="M9.9 10a3 3 0 0 0 4.2 4.2"/>
+{%- elif name == 'upload' %}<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>
+{%- elif name == 'camera' %}<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>
+{%- elif name == 'clock' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{%- elif name == 'heart' %}<path d="M12 20s-7.5-4.6-7.5-10A4.5 4.5 0 0 1 12 7.5 4.5 4.5 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/>
+{%- elif name == 'layers' %}<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>
+{%- elif name == 'flag' %}<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>
+{%- elif name == 'refund' %}<path d="M4 9h11a5 5 0 0 1 0 10H8"/><path d="M8 5L4 9l4 4"/>
+{%- elif name == 'download' %}<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/>
+{%- elif name == 'arrow' %}<path d="M5 12h14M13 6l6 6-6 6"/>
+{%- elif name == 'arrow-left' %}<path d="M19 12H5M11 6l-6 6 6 6"/>
+{%- elif name == 'print' %}<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>
+{%- elif name == 'pause' %}<path d="M9 5v14M15 5v14"/>
+{%- elif name == 'play' %}<path d="M7 4l13 8-13 8V4z"/>
+{%- elif name == 'wallet' %}<path d="M4 7a2 2 0 0 1 2-2h11v4"/><path d="M4 7v11a2 2 0 0 0 2 2h14V9H6a2 2 0 0 1-2-2z"/><circle cx="16" cy="14.5" r="1.2"/>
+{%- elif name == 'map' %}<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>
+{%- elif name == 'settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 1.8 14H1.7a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7.6A1.6 1.6 0 0 0 8.6 3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+{%- elif name == 'alert' %}<path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/>
+{%- elif name == 'info' %}<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>
+{%- elif name == 'external' %}<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>
+{%- else %}<circle cx="12" cy="12" r="9"/>
+{%- endif %}
+</svg>
+{%- endmacro %}
+
+{# Status badge for a bill status code. #}
+{% macro status_badge(status, label) -%}
+{%- set tone = {'PAID': 'ok', 'PAYOUT_SENT': 'info', 'FUNDED': 'info', 'FUNDING': 'info', 'LISTED': 'info', 'REVIEW': 'warn', 'SUBMITTED': 'neutral', 'DRAFT': 'neutral', 'REJECTED': 'danger', 'PAYOUT_FAILED': 'danger', 'WITHDRAWN': 'neutral', 'EXPIRED': 'neutral'}.get(status, 'neutral') -%}
+<span class="badge {{ tone }}">{% if status == 'PAID' %}{{ check() }}{% endif %}{{ label }}</span>
+{%- endmacro %}
 
 {% macro billcard(c, extra_class='') -%}
 <article class="bill {{ extra_class }}" data-id="{{ c.id }}" data-left="{{ c.left_minor }}" data-settle="{{ c.settle_currency }}" aria-label="{{ c.category_label }} bill in {{ c.city or c.country_name }}, {{ c.amount }}">
   <span class="hint-pay" aria-hidden="true">PAY</span><span class="hint-pass" aria-hidden="true">PASS</span>
   {% if c.paid %}<span class="stamp">PAID</span>{% endif %}
-  <div class="top">
-    <div class="row">{{ icon(c.category) }}<div><div class="where">{{ c.city ~ ', ' if c.city }}{{ c.country_name }}</div><strong>{{ c.category_label }}</strong></div></div>
-    {% if c.paid %}{% elif c.urgent %}<span class="pill danger">{{ c.due }}</span>{% else %}<span class="pill grey">{{ c.due }}</span>{% endif %}
+  <div class="bill-body">
+    <div class="bill-head">
+      {{ icon(c.category) }}
+      <div class="bill-title"><span class="bill-where">{{ c.city ~ ', ' if c.city }}{{ c.country_name }}</span><strong>{{ c.category_label }}</strong></div>
+      {% if c.paid %}<span class="badge ok">{{ check() }} Paid</span>{% elif c.urgent %}<span class="badge danger">{{ c.due }}</span>{% else %}<span class="badge neutral">{{ c.due }}</span>{% endif %}
+    </div>
+    <div class="bill-amount num">{{ c.amount }}</div>
+    {% set conv = [] %}{% if c.amount_mine %}{% set _ = conv.append('about ' ~ c.amount_mine) %}{% endif %}{% if c.settle_currency != c.currency and c.settle_amount != c.amount_mine %}{% set _ = conv.append('settles as ' ~ c.settle_amount) %}{% endif %}
+    <div class="bill-conv">{{ conv|join(' · ') or 'Paid in ' ~ c.currency }}</div>
+    <div class="bill-biller">
+      <span class="bill-biller-label">Paid directly to</span>
+      <strong>{{ c.biller }}</strong>
+      {% if c.biller_verified %}<span class="verified">{{ check() }} Verified biller</span>{% endif %}
+    </div>
+    {% if c.story %}<p class="bill-story">{{ c.story }}</p>{% endif %}
+    <div class="bill-meta">
+      <span class="chip ok">{{ check() }} {{ c.checks }} of 9 checks</span>
+      <span class="chip">Account {{ c.account }}</span>
+      {% if c.sponsors %}<span class="chip accent">{{ c.sponsors }} sponsor{{ 's' if c.sponsors != 1 }}</span>{% endif %}
+    </div>
+    <div class="bill-progress">
+      <div class="bar" role="img" aria-label="{{ c.funded_pct }} percent funded"><span style="width: {{ c.funded_pct }}%"></span></div>
+      <div class="bill-progress-row"><span>{{ c.funded }} of {{ c.settle_amount }} funded</span>{% if c.left %}<strong>{{ c.left }} to go</strong>{% endif %}</div>
+    </div>
   </div>
-  <div class="amount">{{ c.amount }}</div>
-  {% set conv = [] %}{% if c.amount_mine %}{% set _ = conv.append('about ' ~ c.amount_mine) %}{% endif %}{% if c.settle_currency != c.currency and c.settle_amount != c.amount_mine %}{% set _ = conv.append('settles as ' ~ c.settle_amount) %}{% endif %}
-  <div class="conv">{{ conv|join(' · ') }}</div>
-  <div class="biller">Paid to {{ c.biller }} {% if c.biller_verified %}<span class="verified">{{ check() }} verified biller</span>{% endif %}</div>
-  {% if c.story %}<p class="story">{{ c.story }}</p>{% endif %}
-  <div class="meta">
-    <span class="pill ok">{{ check() }} {{ c.checks }} of 9 checks passed</span>
-    <span class="pill">Account {{ c.account }}</span>
-    {% if c.sponsors %}<span class="pill violet">{{ c.sponsors }} sponsor{{ 's' if c.sponsors != 1 }}</span>{% endif %}
+  <div class="bill-stub" aria-label="Money path: you, PayPal, then {{ c.biller }}. Never the person.">
+    <ol class="path"><li>You</li><li>PayPal</li><li class="to">{{ c.biller }}</li></ol>
+    <div class="never">{{ ui('shield') }} Paid to the biller, never to the person</div>
   </div>
-  <div class="bar" aria-label="{{ c.funded_pct }} percent funded"><span style="width: {{ c.funded_pct }}%"></span></div>
-  <div class="spread" style="margin-top:8px;font-size:13px"><span class="muted">{{ c.funded }} of {{ c.settle_amount }} funded</span>{% if c.left %}<strong>{{ c.left }} to go</strong>{% endif %}</div>
-  <div class="path" aria-label="Money path: you, PayPal, then {{ c.biller }}. Never the person."><span>You</span><i></i><span>PayPal</span><i></i><span class="to">{{ c.biller }}</span></div>
-  <div class="never">Paid to the biller, never to the person</div>
 </article>
 {%- endmacro %}

@@ -1,30 +1,83 @@
-{% from "_macros.html" import icon, check %}
-<div class="grid cols-4" style="margin:6px 0 22px">
-  <div class="panel"><div class="kpi">{{ paid_count }}</div><div class="kpi-label">bills paid to their billers</div></div>
-  <div class="panel"><div class="kpi">{{ biller_count }}</div><div class="kpi-label">billers paid</div></div>
-  <div class="panel"><div class="kpi" style="font-size:24px">{{ totals|join(' + ') or '0' }}</div><div class="kpi-label">given (after refunds)</div></div>
-  <div class="panel"><div class="kpi">{{ thanks|length }}</div><div class="kpi-label">thank-you notes</div></div>
+{% from "_macros.html" import icon, check, ui %}
+<section class="impact-head dark" aria-labelledby="impact-title">
+  <div class="container">
+    <div class="spread" style="align-items:end">
+      <div>
+        <span class="eyebrow accent">My giving</span>
+        <h1 id="impact-title" style="margin:0">What your money did</h1>
+        <p class="lead measure" style="margin:10px 0 0">Every payment, where it went, and the PayPal proof. This page updates live as payouts are confirmed.</p>
+      </div>
+      <div class="row"><a class="btn light" href="/deck">Pay another bill</a><a class="btn outline-light" href="/sponsor/bulk">Clear many at once</a></div>
+    </div>
+    <div class="impact-stats">
+      <div class="stat"><span class="stat-value num">{{ paid_count }}</span><span class="stat-label">bills paid to their billers</span></div>
+      <div class="stat"><span class="stat-value num">{{ biller_count }}</span><span class="stat-label">billers paid</span></div>
+      <div class="stat"><span class="stat-value sm num totals-line">{{ totals|join(' + ') or '0' }}</span><span class="stat-label">given, after refunds</span></div>
+      <div class="stat"><span class="stat-value num">{{ thanks|length }}</span><span class="stat-label">thank-you notes</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="container page-body">
+  <div class="dash">
+    <section class="card" aria-labelledby="pay-title">
+      <div class="card-head"><h2 id="pay-title">Your payments</h2><span class="badge neutral">{{ items|length }} payment{{ 's' if items|length != 1 }}</span></div>
+      {% for c in items %}
+      {% set refunded_bill = c.status in ('WITHDRAWN', 'EXPIRED') %}
+      {% set stage = 4 if c.paid else 3 if c.status == 'PAYOUT_SENT' else 2 if c.status == 'FUNDED' else 1 %}
+      <article class="payment" id="row-{{ c.id }}">
+        <div class="payment-main">{{ icon(c.category) }}<div style="min-width:0"><strong>{{ c.category_label }}, {{ c.city or c.country_name }}</strong><div class="sub">Paid to {{ c.biller }} · {{ c.id }}</div></div></div>
+        <div class="payment-amt">{{ c.given }}<small class="muted">{{ 'big-sponsor checkout' if c.source == 'bulk' else 'giving agent' if c.source == 'agent' else 'monthly sponsorship' if c.source == 'recurring' else 'swipe' }}{% if c.refunded %} · {{ c.refunded }} refunded{% endif %}</small></div>
+        <div class="payment-side">
+          {% if c.paid %}<span class="badge solid-ok">{{ check() }} Paid to biller</span>{% elif c.status == 'PAYOUT_SENT' %}<span class="badge">Paying the biller</span>{% elif refunded_bill %}<span class="badge neutral">{{ c.status_label }}, refunded</span>{% else %}<span class="badge">{{ c.status_label }} · {{ c.funded_pct }}%</span>{% endif %}
+          <a class="btn secondary small" href="/receipts/{{ c.contribution }}">{{ ui('receipt') }} Receipt</a>
+        </div>
+        {% if not refunded_bill %}
+        <ol class="tracker" aria-label="Payment progress">
+          <li class="done">Captured</li>
+          <li class="{{ 'done' if stage >= 2 else 'now' }}">{{ 'Fully funded' if stage >= 2 else c.funded_pct ~ '% funded' }}</li>
+          <li class="{{ 'done' if stage >= 3 else 'now' if stage == 2 else '' }}">Payout sent</li>
+          <li class="{{ 'done' if stage >= 4 else 'now' if stage == 3 else '' }}">Biller paid</li>
+        </ol>
+        {% endif %}
+        <details class="proof">
+          <summary>PayPal proof{% if c.paid and c.first %} and monthly option{% endif %}</summary>
+          <div class="proof-body">
+            <div class="proof-ids">
+              <div><span>Order</span><code>{{ c.order_id }}</code></div>
+              <div><span>Capture</span><code>{{ c.capture_id }}</code></div>
+              {% if c.payout_item %}<div><span>Payout item</span><code>{{ c.payout_item }}</code></div>{% endif %}
+            </div>
+            {% if c.paid and c.first %}
+            <form method="post" action="/sponsor/recurring" class="monthly-form"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="bill_id" value="{{ c.id }}">
+              <label for="m-{{ c.contribution }}" style="margin:0;font-size:14px">Cover this household's next {{ c.category_label|lower }} bill each month, up to</label>
+              <input id="m-{{ c.contribution }}" type="text" name="amount" value="{{ (c.settle_minor / 100)|round(0)|int if c.settle_currency not in ('JPY','HUF','TWD') else c.settle_minor }}" aria-label="Monthly maximum in {{ c.settle_currency }}"><span class="muted" style="font-size:14px">{{ c.settle_currency }}</span>
+              <button class="btn dark small" title="Pay this household's next {{ c.category_label|lower }} bill automatically">Every month</button></form>
+            {% endif %}
+          </div>
+        </details>
+      </article>
+      {% else %}
+      <div class="empty"><span class="icon-tile">{{ ui('heart') }}</span><h3>No payments yet</h3><p class="muted">Your first bill takes about a minute.</p><a class="btn" href="/deck">Find a bill</a></div>
+      {% endfor %}
+    </section>
+
+    <div class="stack">
+      <section class="card" aria-labelledby="thx-title">
+        <div class="card-head"><h2 id="thx-title">Thank-you notes</h2>{{ ui('heart') }}</div>
+        <div class="stack-sm">
+        {% for b in thanks %}<div class="thanks">{{ b.thank_you }}<small>{{ category_label(b.category) }} bill, {{ b.city or country_name(b.country) }}</small></div>
+        {% else %}<p class="muted mb-0" style="font-size:14.5px">When a household thanks you, the note appears here the moment they send it.</p>{% endfor %}
+        </div>
+      </section>
+      <section class="card" id="monthly" aria-labelledby="monthly-title">
+        <div class="card-head"><h2 id="monthly-title">Monthly sponsorships</h2><span class="icon-tile" style="width:40px;height:40px">{{ ui('clock') }}</span></div>
+        <p class="muted" style="font-size:14.5px">Cover a household's next bill automatically each month, paid to the same biller with your saved PayPal (Vault).</p>
+        {% for p in pledges %}<div class="spread" style="padding:12px 0;border-top:1px solid var(--border);flex-wrap:nowrap"><span style="font-size:14.5px">{{ category_label(p.category) }} bill, {{ p.where }}: up to <strong>{{ p.max }}</strong> a month to {{ p.biller }}</span>
+        <form method="post" action="/sponsor/recurring/{{ p.id }}/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn secondary small">Stop</button></form></div>
+        {% else %}<p style="font-size:14.5px;margin-bottom:12px">None yet. After a bill you helped is paid, open its PayPal proof to sponsor that household's next one.</p>{% endfor %}
+        {% if not has_token %}<a class="btn secondary small" href="/sponsor/vault/connect?next=/sponsor">{{ ui('wallet') }} Save PayPal for automatic giving</a>{% endif %}
+      </section>
+    </div>
+  </div>
 </div>
-{% if thanks %}
-<div class="panel" style="margin-bottom:18px"><h3>Thank-you notes</h3>
-{% for b in thanks %}<div class="thanks" style="margin-top:10px">"{{ b.thank_you }}" <small style="display:block;color:var(--accent-ink)">{{ category_label(b.category) }} bill, {{ b.city or country_name(b.country) }}</small></div>{% endfor %}
-</div>{% endif %}
-<div class="panel" id="monthly" style="margin-bottom:18px"><div class="spread"><h3 style="margin:0">Monthly sponsorships</h3>{% if not has_token %}<a class="btn ghost small" href="/sponsor/vault/connect?next=/sponsor">Save PayPal for automatic giving</a>{% endif %}</div>
-<p class="muted" style="font-size:13px">Cover a household's next bill automatically each month, paid to the same biller with your saved PayPal (Vault).</p>
-{% for p in pledges %}<div class="spread" style="padding:8px 0;border-top:1px solid var(--line)"><span>{{ category_label(p.category) }} bill, {{ p.where }}: up to <strong>{{ p.max }}</strong> a month to {{ p.biller }}</span>
-<form method="post" action="/sponsor/recurring/{{ p.id }}/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost small">Stop</button></form></div>
-{% else %}<p class="muted" style="font-size:14px">None yet. After a bill you helped is paid, you can sponsor that household's next one from the table below.</p>{% endfor %}</div>
-<div class="panel"><h3>Your payments</h3>
-<div class="table-wrap"><table>
-<thead><tr><th>Bill</th><th>You gave</th><th>Status</th><th>Proof</th></tr></thead>
-<tbody>
-{% for c in items %}
-<tr id="row-{{ c.id }}">
-  <td><div class="row" style="gap:10px">{{ icon(c.category) }}<div><strong>{{ c.category_label }}</strong>, {{ c.city or c.country_name }}<div class="muted" style="font-size:13px">Paid to {{ c.biller }} &middot; {{ c.id }}</div></div></div></td>
-  <td><strong>{{ c.given }}</strong>{% if c.refunded %}<div class="muted" style="font-size:12px">{{ c.refunded }} refunded</div>{% endif %}<div class="muted" style="font-size:12px">{{ c.source }}</div></td>
-  <td>{% if c.paid %}<span class="pill violet">{{ check() }} Paid to biller</span>{% elif c.status in ('PAYOUT_SENT',) %}<span class="pill">Paying the biller</span>{% elif c.status in ('WITHDRAWN','EXPIRED') %}<span class="pill grey">{{ c.status_label }}, refunded</span>{% else %}<span class="pill">{{ c.status_label }} &middot; {{ c.funded_pct }}%</span>{% endif %}</td>
-  <td style="font-size:12px" class="mono">order {{ c.order_id }}<br>capture {{ c.capture_id }}{% if c.payout_item %}<br>payout {{ c.payout_item }}{% endif %}<br><a href="/receipts/{{ c.contribution }}">receipt</a>
-  {% if c.paid and c.first %}<form method="post" action="/sponsor/recurring" class="row" style="margin-top:6px;gap:6px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="bill_id" value="{{ c.id }}"><input type="text" name="amount" value="{{ (c.settle_minor / 100)|round(0)|int if c.settle_currency not in ('JPY','HUF','TWD') else c.settle_minor }}" aria-label="Monthly maximum in {{ c.settle_currency }}" style="width:80px;padding:6px 8px"><button class="btn violet small" title="Pay this household's next {{ c.category_label|lower }} bill automatically">Every month</button></form>{% endif %}</td>
-</tr>
-{% else %}<tr><td colspan="4" class="muted">No payments yet. <a href="/deck">Find a bill</a>.</td></tr>{% endfor %}
-</tbody></table></div></div>

@@ -1,71 +1,106 @@
-{% extends "base.html" %}{% block title %}Giving agent · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui, check %}
+{% block title %}Giving agent · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<span class="eyebrow">Agentic giving</span>
-<h1 style="margin-bottom:6px">Your giving agent</h1>
-<p class="muted" style="max-width:760px">Tell the agent what you want to support, in your own words. It turns that into limits you confirm. It then pays matching bills with your saved PayPal account, straight to the billers, and explains every decision. The limits are enforced by the app's code; the AI cannot exceed them.</p>
-
-<div class="grid cols-2" style="align-items:start;margin-top:18px">
-  <div class="stack">
-    {% if agent and agent.active %}
-    <div class="panel">
-      <div class="spread"><h3 style="margin:0">Active rules</h3><span class="pill ok">running daily</span></div>
-      <p style="margin:10px 0">{{ policy.note }}</p>
-      <div class="bar"><span style="width: {{ [100, (spent / policy.monthly_budget_usd * 100) if policy.monthly_budget_usd else 0]|min }}%"></span></div>
-      <p class="muted" style="font-size:13px;margin-top:6px">{{ '%.2f'|format(spent) }} of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used this month</p>
-      <div class="row">
-        <form method="post" action="/sponsor/agent/run"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" {% if not token %}disabled{% endif %}>Run now</button></form>
-        <form method="post" action="/sponsor/agent/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost">Stop agent</button></form>
-      </div>
+<section class="page-head dark" style="background:var(--ink-950)">
+  <div class="container spread" style="align-items:end">
+    <div>
+      <span class="eyebrow accent">{{ ui('robot') }} Agentic giving</span>
+      <h1>Your giving agent</h1>
+      <p class="lead measure">Tell the agent what you want to support, in your own words. It turns that into limits you confirm, pays matching bills with your saved PayPal straight to the billers, and explains every decision. The limits are enforced by the app's code; the AI cannot exceed them.</p>
     </div>
-    {% endif %}
-    <div class="panel">
-      <h3>PayPal for the agent</h3>
-      {% if token %}<p><span class="pill ok">saved</span> {{ token.payer_email }} <span class="muted mono" style="font-size:12px">vault token {{ token.payment_token_id }}</span></p>
-      <p class="muted" style="font-size:13px">The agent charges this account without you present, only within your limits. Stop the agent to end it.</p>
-      {% else %}<p>Save your PayPal account once with PayPal Vault so the agent can pay while you are away.</p>
-      <a class="btn violet" href="/sponsor/vault/connect?next=/sponsor/agent">Save PayPal for automatic giving</a>{% endif %}
-    </div>
-    <div class="panel">
-      <h3>{{ 'Change' if agent else 'Write' }} your rules</h3>
-      <form method="post" action="/sponsor/agent/parse">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <textarea name="rules" required>{{ draft.rules if draft else (agent.rules_text if agent else 'Up to 100 USD a month for children\'s school fees and medical bills, never more than 40 per bill.') }}</textarea>
-        <button class="btn" style="margin-top:10px">Turn into limits</button>
-      </form>
+    <div class="row">
+      {% if agent and agent.active %}<span class="badge ok" style="font-size:14px;padding:8px 14px"><span class="live-dot" aria-hidden="true"></span> Agent running daily</span>{% else %}<span class="badge neutral" style="font-size:14px;padding:8px 14px">Agent not running</span>{% endif %}
     </div>
   </div>
-  <div class="stack">
-    {% if draft %}
-    <div class="panel" id="confirm" style="border:2px solid var(--primary)">
-      <h3>Confirm the limits</h3>
-      <p class="muted" style="font-size:13px">Read from your words by {{ 'an AI model' if draft.source == 'ai' else 'a rule-based parser' }}. Check each value; this is exactly what will be enforced.</p>
-      <form method="post" action="/sponsor/agent/save">
-        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="rules" value="{{ draft.rules }}">
-        <div class="grid cols-2" style="gap:12px">
-          <div class="field"><label>Monthly budget (USD)</label><input type="number" step="0.01" min="1" max="5000" name="monthly_budget_usd" value="{{ draft.policy.monthly_budget_usd }}"></div>
-          <div class="field"><label>Most per bill (USD)</label><input type="number" step="0.01" min="1" name="per_bill_max_usd" value="{{ draft.policy.per_bill_max_usd }}"></div>
+</section>
+
+<div class="container page-body">
+  <div class="agent-grid">
+    <div class="stack">
+      {% if agent and agent.active %}
+      {% set pct = [100, (spent / policy.monthly_budget_usd * 100) if policy.monthly_budget_usd else 0]|min %}
+      <section class="card" aria-labelledby="active-title">
+        <div class="card-head"><h2 id="active-title">Active rules</h2><span class="code-lock">{{ ui('lock') }} Enforced in code</span></div>
+        <div class="row meter-row">
+          <div class="meter" role="img" aria-label="{{ '%.2f'|format(spent) }} of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used this month">
+            <svg viewBox="0 0 148 148"><circle class="track" cx="74" cy="74" r="60"/><circle class="fill" cx="74" cy="74" r="60" stroke-dasharray="376.99" stroke-dashoffset="{{ 376.99 * (1 - pct / 100) }}"/></svg>
+            <div class="meter-label"><div><strong class="num">{{ pct|round|int }}%</strong>of budget</div></div>
+          </div>
+          <div style="min-width:0">
+            <p style="margin:0 0 8px;font-weight:600">{{ policy.note }}</p>
+            <p class="muted mb-0" style="font-size:14px"><strong class="num" style="color:var(--text)">{{ '%.2f'|format(spent) }}</strong> of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used this month</p>
+          </div>
         </div>
-        <div class="field"><label>Kinds of bills (none ticked means any)</label>
-          <div class="row">{% for k in ['school_fees','medical','electricity','water','rent','phone'] %}<label class="check" style="font-weight:600"><input type="checkbox" name="categories" value="{{ k }}" {{ 'checked' if k in draft.policy.categories }}> {{ category_label(k) }}</label>{% endfor %}</div></div>
-        <div class="grid cols-2" style="gap:12px">
-          <div class="field"><label>Countries (codes, comma separated; empty means any)</label><input type="text" name="countries" value="{{ draft.policy.countries|join(', ') }}"></div>
-          <div class="field"><label>Highest risk score allowed</label><input type="number" min="0" max="60" name="max_risk" value="{{ draft.policy.max_risk }}"></div>
+        <div class="limits" style="margin-top:20px">
+          <div class="limit"><span>Monthly budget</span><strong class="num">{{ '%.2f'|format(policy.monthly_budget_usd) }} USD</strong></div>
+          <div class="limit"><span>Most per bill</span><strong class="num">{{ '%.2f'|format(policy.per_bill_max_usd) }} USD</strong></div>
+          <div class="limit"><span>Kinds of bill</span><strong>{{ policy.categories|map('replace', '_', ' ')|join(', ')|capitalize or 'Any' }}</strong></div>
+          <div class="limit"><span>Countries</span><strong>{{ policy.countries|join(', ') or 'Any' }}</strong></div>
+          <div class="limit"><span>Highest risk</span><strong class="num">{{ policy.max_risk }}</strong></div>
         </div>
-        <p class="alert info">{{ draft.policy.note }}</p>
-        <button class="btn">Confirm and start the agent</button>
-      </form>
+        <div class="row" style="margin-top:20px">
+          <form method="post" action="/sponsor/agent/run"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" {% if not token %}disabled{% endif %}>{{ ui('play') }} Run now</button></form>
+          <form method="post" action="/sponsor/agent/stop"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn secondary">{{ ui('pause') }} Stop agent</button></form>
+        </div>
+      </section>
+      {% endif %}
+      <section class="card" aria-labelledby="vault-title">
+        <div class="card-head"><h2 id="vault-title">PayPal for the agent</h2>{% if token %}<span class="badge ok">{{ check() }} Saved</span>{% endif %}</div>
+        {% if token %}
+          <div class="row" style="flex-wrap:nowrap"><span class="icon-tile ok">{{ ui('wallet') }}</span><div style="min-width:0"><strong style="overflow-wrap:anywhere">{{ token.payer_email }}</strong><div class="muted mono" style="font-size:12.5px;overflow-wrap:anywhere">vault token {{ token.payment_token_id }}</div></div></div>
+          <p class="muted" style="font-size:14px;margin:14px 0 0">The agent charges this account without you present, only within your limits. Stop the agent to end it.</p>
+        {% else %}
+          <p>Save your PayPal account once with PayPal Vault so the agent can pay while you are away.</p>
+          <a class="btn dark" href="/sponsor/vault/connect?next=/sponsor/agent">{{ ui('wallet') }} Save PayPal for automatic giving</a>
+        {% endif %}
+      </section>
+      <section class="card" aria-labelledby="rules-title">
+        <div class="card-head"><h2 id="rules-title">{{ 'Change' if agent else 'Write' }} your rules</h2><span class="ai-tag">{{ ui('spark') }} Read by AI</span></div>
+        <form method="post" action="/sponsor/agent/parse">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label for="rules" class="sr-only">Your rules in plain words</label>
+          <textarea id="rules" name="rules" required>{{ draft.rules if draft else (agent.rules_text if agent else 'Up to 100 USD a month for children\'s school fees and medical bills, never more than 40 per bill.') }}</textarea>
+          <button class="btn" style="margin-top:12px">Turn into limits</button>
+        </form>
+      </section>
     </div>
-    {% endif %}
-    <div class="panel" id="log">
-      <h3>Decision log</h3>
-      <p class="muted" style="font-size:13px">Every proposal, payment, clamp and refusal, with the rule that applied.</p>
-      <div class="table-wrap"><table><thead><tr><th>Decision</th><th>Bill</th><th>Why</th></tr></thead><tbody>
-      {% for d in decisions %}<tr>
-        <td><span class="pill {{ {'paid':'ok','clamped':'warn','blocked':'danger','skipped':'grey'}[d.decision] }}">{{ d.decision }}</span>{% if d.paid %}<div style="font-weight:800;margin-top:4px">{{ d.paid }}</div>{% endif %}{% if d.proposed and d.decision in ('clamped','blocked') %}<div class="muted" style="font-size:12px">asked {{ d.proposed }}</div>{% endif %}</td>
-        <td>{% if d.bill_id %}{{ d.category }}, {{ d.where }}<div class="muted mono" style="font-size:12px">{{ d.bill_id }}</div>{% endif %}</td>
-        <td style="font-size:13px">{{ d.reason }}{% if d.rule %}<div class="muted" style="font-size:12px">rule: {{ d.rule }}</div>{% endif %}</td></tr>
-      {% else %}<tr><td colspan="3" class="muted">No runs yet.</td></tr>{% endfor %}
-      </tbody></table></div>
+    <div class="stack">
+      {% if draft %}
+      <section class="card confirm-card" id="confirm" aria-labelledby="confirm-title">
+        <div class="card-head"><h2 id="confirm-title">Confirm the limits</h2><span class="badge warn">Needs your yes</span></div>
+        <p class="muted" style="font-size:14px">Read from your words by {{ 'an AI model' if draft.source == 'ai' else 'a rule-based parser' }}. Check each value; this is exactly what will be enforced.</p>
+        <form method="post" action="/sponsor/agent/save">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="rules" value="{{ draft.rules }}">
+          <div class="grid cols-2" style="gap:12px">
+            <div class="field"><label for="f-budget">Monthly budget (USD)</label><input id="f-budget" type="number" step="0.01" min="1" max="5000" name="monthly_budget_usd" value="{{ draft.policy.monthly_budget_usd }}"></div>
+            <div class="field"><label for="f-per">Most per bill (USD)</label><input id="f-per" type="number" step="0.01" min="1" name="per_bill_max_usd" value="{{ draft.policy.per_bill_max_usd }}"></div>
+          </div>
+          <fieldset class="field" style="border:0;padding:0;margin:0 0 18px"><legend style="font-weight:700;font-size:14.5px;margin-bottom:8px">Kinds of bills (none ticked means any)</legend>
+            <div class="check-tiles">{% for k in ['school_fees','medical','electricity','water','rent','phone'] %}<label class="check-tile"><input type="checkbox" name="categories" value="{{ k }}" {{ 'checked' if k in draft.policy.categories }}> {{ category_label(k) }}</label>{% endfor %}</div></fieldset>
+          <div class="grid cols-2" style="gap:12px">
+            <div class="field"><label for="f-countries">Countries (codes, comma separated; empty means any)</label><input id="f-countries" type="text" name="countries" value="{{ draft.policy.countries|join(', ') }}"></div>
+            <div class="field"><label for="f-risk">Highest risk score allowed</label><input id="f-risk" type="number" min="0" max="60" name="max_risk" value="{{ draft.policy.max_risk }}"></div>
+          </div>
+          <p class="alert info">{{ ui('info') }}<span>{{ draft.policy.note }}</span></p>
+          <button class="btn lg">Confirm and start the agent</button>
+        </form>
+      </section>
+      {% endif %}
+      <section class="card" id="log" aria-labelledby="log-title">
+        <div class="card-head"><h2 id="log-title">Decision log</h2><span class="badge neutral">{{ decisions|length }} entries</span></div>
+        <p class="muted" style="font-size:14px">Every proposal, payment, clamp and refusal, with the rule that applied.</p>
+        <div>
+        {% for d in decisions %}
+          <div class="decision">
+            <div><span class="badge {{ {'paid':'ok','clamped':'warn','blocked':'danger','skipped':'neutral'}[d.decision] }}">{{ d.decision }}</span>{% if d.paid %}<div class="amt">{{ d.paid }}</div>{% endif %}{% if d.proposed and d.decision in ('clamped','blocked') %}<div class="muted" style="font-size:12.5px;margin-top:4px">asked {{ d.proposed }}</div>{% endif %}</div>
+            <div>{% if d.bill_id %}<div class="bill-ref">{{ d.category }}, {{ d.where }} <span class="muted mono" style="font-weight:600">{{ d.bill_id }}</span></div>{% endif %}<div class="why">{{ d.reason }}</div>{% if d.rule %}<span class="rule">{{ ui('lock') }} rule: {{ d.rule }}</span>{% endif %}</div>
+          </div>
+        {% else %}
+          <div class="empty" style="padding:28px 0"><span class="icon-tile">{{ ui('robot') }}</span><p class="muted mb-0">No runs yet. Confirm your limits, save PayPal, then press Run now.</p></div>
+        {% endfor %}
+        </div>
+      </section>
     </div>
   </div>
 </div>

@@ -1,23 +1,39 @@
-{% extends "base.html" %}{% block title %}Help · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}Help · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<div class="grid" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start">
-  <div class="panel">
-    <h2>Ask about your bills and payments</h2>
-    <p class="muted" style="font-size:14px">The assistant only reads your own records, Billkind's policies, and PayPal order details for your own orders (through PayPal's Agent Toolkit). It does not guess: anything it cannot confirm goes to a person.</p>
-    <div id="chat" class="stack" style="min-height:160px;margin:14px 0" aria-live="polite"></div>
-    <form id="ask" class="row"><label class="sr-only" for="q">Your question</label>
-      <input id="q" type="text" placeholder="{{ 'Why is my bill in review?' if user.role == 'poster' else 'Did the biller get my money?' }}" style="flex:1" autocomplete="off">
-      <button class="btn" type="submit">Ask</button></form>
-    <div class="row" style="margin-top:10px">
-      {% for s in (['Where is my bill?', 'Why was my bill held for review?', 'Who receives the money?'] if user.role == 'poster' else ['Did the biller get my money?', 'How do refunds work?', 'What is the status of my last PayPal order?']) %}
-      <button class="pill" data-s="{{ s }}" style="border:0;cursor:pointer">{{ s }}</button>{% endfor %}
-    </div>
-    <div class="hr"></div>
-    <button class="btn ghost small" id="human">Talk to a person</button> <span id="ticket" class="muted" style="font-size:13px"></span>
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">{{ ui('chat') }} Help and support</span>
+    <h1>Ask about your bills and payments</h1>
+    <p class="lead measure">The assistant only reads your own records, Billkind's policies, and PayPal order details for your own orders (through PayPal's Agent Toolkit). It does not guess: anything it cannot confirm goes to a person.</p>
   </div>
-  <div class="stack">
-    <div class="panel flat"><h3>Policies</h3>{% for k, v in policies.items() %}<details style="margin:8px 0"><summary style="font-weight:700;cursor:pointer">{{ k.replace('_', ' ')|capitalize }}</summary><p style="font-size:14px;margin:6px 0 0">{{ v }}</p></details>{% endfor %}</div>
-    {% if tickets %}<div class="panel flat"><h3>Your tickets</h3>{% for t in tickets %}<p style="font-size:14px"><span class="pill {{ 'ok' if t.status == 'RESOLVED' else 'warn' }}">{{ t.status|lower }}</span> {{ t.id }}: {{ t.subject }}{% if t.resolution %}<br><span class="muted">{{ t.resolution }}</span>{% endif %}</p>{% endfor %}</div>{% endif %}
+</section>
+<div class="container page-body">
+  <div class="chat-shell">
+    <section class="card chat-card" aria-labelledby="chat-title">
+      <div class="chat-top"><span class="icon-tile dark">{{ ui('chat') }}</span><div><h2 id="chat-title">Billkind assistant</h2><p>Answers from your records, checked before they are shown</p></div></div>
+      <div id="chat" class="chat-log" aria-live="polite">
+        <p class="chat-hello" id="chat-hello">Hello. Ask me where a bill is, why it was held, how refunds work, or whether a biller received your money. Try one of the questions below.</p>
+      </div>
+      <div class="chat-input">
+        <div class="suggest">
+          {% for s in (['Where is my bill?', 'Why was my bill held for review?', 'Who receives the money?'] if user.role == 'poster' else ['Did the biller get my money?', 'How do refunds work?', 'What is the status of my last PayPal order?']) %}
+          <button class="chip-btn" type="button" data-s="{{ s }}">{{ s }}</button>{% endfor %}
+        </div>
+        <form id="ask"><label class="sr-only" for="q">Your question</label>
+          <input id="q" type="text" placeholder="{{ 'Why is my bill in review?' if user.role == 'poster' else 'Did the biller get my money?' }}" autocomplete="off">
+          <button class="btn" type="submit">Ask</button></form>
+        <div class="row" style="justify-content:space-between"><span class="muted" style="font-size:13.5px">Not sure about an answer? A person will read your conversation.</span><span class="row" style="gap:10px"><span id="ticket" class="muted" style="font-size:13.5px" role="status"></span><button class="btn secondary small" id="human" type="button">{{ ui('user') }} Talk to a person</button></span></div>
+      </div>
+    </section>
+    <div class="stack">
+      <section class="card flat" aria-labelledby="pol-title">
+        <h2 id="pol-title" style="font-size:18px;margin-bottom:4px">Policies</h2>
+        {% for k, v in policies.items() %}<details class="policy"><summary>{{ k.replace('_', ' ')|capitalize }}</summary><p>{{ v }}</p></details>{% endfor %}
+      </section>
+      {% if tickets %}<section class="card flat" aria-labelledby="tk-title"><h2 id="tk-title" style="font-size:18px">Your tickets</h2>{% for t in tickets %}<div class="ticket"><div class="spread"><strong style="font-size:14.5px">{{ t.id }}</strong><span class="badge {{ 'ok' if t.status == 'RESOLVED' else 'warn' }}">{{ t.status|lower }}</span></div><p style="font-size:14px;margin:6px 0 0">{{ t.subject }}</p>{% if t.resolution %}<p class="muted" style="font-size:14px;margin:6px 0 0">{{ t.resolution }}</p>{% endif %}</div>{% endfor %}</section>{% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -27,22 +43,22 @@
 (() => {
   const chat = document.getElementById('chat'), q = document.getElementById('q'), history = [];
   const bubble = (role, text, meta) => {
+    const hello = document.getElementById('chat-hello'); if (hello) hello.remove();
     const d = document.createElement('div');
-    d.className = role === 'user' ? 'panel flat' : 'panel';
-    d.style.cssText = role === 'user' ? 'background:var(--primary-soft);border:0;padding:12px 14px;margin-left:15%' : 'padding:12px 14px;margin-right:10%';
+    d.className = 'msg-bubble ' + (role === 'user' ? 'user' : 'bot');
     d.textContent = text;
-    if (meta) { const m = document.createElement('div'); m.className = 'hint'; m.textContent = meta; d.appendChild(m); }
-    chat.appendChild(d); return d;
+    if (meta) { const m = document.createElement('div'); m.className = 'meta'; m.textContent = meta; d.appendChild(m); }
+    chat.appendChild(d); d.scrollIntoView({block: 'nearest'}); return d;
   };
   async function ask(text) {
     if (!text.trim()) return;
     bubble('user', text); history.push({role: 'user', content: text}); q.value = '';
-    const wait = bubble('assistant', 'Checking your records...');
+    const wait = bubble('assistant', 'Checking your records...'); wait.classList.add('wait');
     const r = await BillkindPay.post('/api/help', {question: text, history});
     const d = await r.json(); wait.remove();
     const meta = (d.source === 'ai' ? 'AI answer checked against your records' : 'Answer built directly from your records') + (d.tools && d.tools.length ? ' · looked up: ' + [...new Set(d.tools)].join(', ') : '') + (d.note ? ' · ' + d.note : '');
     bubble('assistant', d.answer, meta); history.push({role: 'assistant', content: d.answer});
-    if (d.escalate) document.getElementById('human').classList.add('violet');
+    if (d.escalate) document.getElementById('human').classList.replace('secondary', 'accent');
   }
   document.getElementById('ask').onsubmit = e => { e.preventDefault(); ask(q.value); };
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => ask(b.dataset.s));

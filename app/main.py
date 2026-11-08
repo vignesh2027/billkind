@@ -9,9 +9,11 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
@@ -53,6 +55,20 @@ async def _login_required(request: Request, exc: auth.LoginRequired):
     return RedirectResponse(f"/login?next={exc.next_url}", status_code=303)
 
 
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(request: Request, exc: StarletteHTTPException):
+    """Browsers get a designed page for 403 and 404; API clients keep the JSON error."""
+    if request.method == "GET" and exc.status_code in (403, 404) and "text/html" in request.headers.get("accept", ""):
+        if exc.status_code == 404:
+            title, message = "We could not find that page", "It may have moved, or it belongs to another account."
+        else:
+            title, message = "This page is for another kind of account", "Sign in with a different demo account to see it."
+        resp = render(request, "error.html", code=exc.status_code, title=title, message=message)
+        resp.status_code = exc.status_code
+        return resp
+    return await http_exception_handler(request, exc)
+
+
 def render(request: Request, name: str, **ctx) -> HTMLResponse:
     user = auth.current_user(request)
     ctx.update(request=request, user=user, csrf=auth.csrf_token(request),
@@ -77,7 +93,12 @@ def stats() -> dict:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     sample = db.q("SELECT * FROM bills WHERE status IN ('LISTED','FUNDING') ORDER BY due_date LIMIT 3")
-    return render(request, "home.html", stats=stats(), cards=[views.card(b) for b in sample])
+    by_country = db.q("SELECT country, COUNT(*) AS n FROM bills WHERE status = 'PAID' GROUP BY country ORDER BY n DESC")
+    open_by_country = db.q("SELECT country, COUNT(*) AS n FROM bills WHERE status IN ('LISTED','FUNDING') "
+                           "GROUP BY country")
+    return render(request, "home.html", stats=stats(), cards=[views.card(b) for b in sample],
+                  feed=events.recent_public(6), by_country=by_country, open_by_country=open_by_country,
+                  countries=views.COUNTRIES)
 
 
 @app.get("/live", response_class=HTMLResponse)

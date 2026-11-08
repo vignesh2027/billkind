@@ -1,1 +1,16 @@
-{% extends "base.html" %}{% block main %}<div class="panel"><h2>That did not work</h2><p>{{ message }}</p><a class="btn ghost" href="javascript:history.back()">Go back</a></div>{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}{{ title or 'Something went wrong' }} · Billkind{% endblock %}
+{% block main %}
+<section class="error-page">
+  <div class="error-card">
+    {% if code %}<div class="error-code num">{{ code }}</div>{% else %}<span class="icon-tile" style="width:64px;height:64px">{{ ui('alert') }}</span>{% endif %}
+    <h1 style="font-size:clamp(28px,3vw,44px);margin:0">{{ title or 'That did not work' }}</h1>
+    <p class="lead" style="margin:0">{{ message }}</p>
+    <div class="row" style="justify-content:center;margin-top:10px">
+      <a class="btn secondary" href="javascript:history.back()">{{ ui('arrow-left') }} Go back</a>
+      <a class="btn" href="/">Home</a>
+      {% if user %}<a class="btn quiet" href="/help">Get help</a>{% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

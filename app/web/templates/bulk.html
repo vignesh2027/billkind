@@ -1,30 +1,59 @@
-{% extends "base.html" %}{% block title %}Big-sponsor mode · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}Big-sponsor mode · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<span class="eyebrow">Big-sponsor mode</span>
-<h1 style="margin-bottom:6px">Clear a whole group of bills in one go</h1>
-<p class="muted" style="max-width:720px">Describe what you want to clear. Billkind finds the matching verified bills, you pay once with PayPal, and every biller gets its own payout and every bill its own receipt. Money goes to the billers, never to the people.</p>
-<div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);align-items:start;margin-top:18px">
-  <div class="panel">
-    <label for="ask">What should we clear?</label>
-    <textarea id="ask" style="min-height:80px">Clear every school fee bill under 60 USD</textarea>
-    <div class="row" style="margin:10px 0">
-      {% for ex in ['Clear every school fee bill under 60 USD', 'Pay all electricity bills in Nigeria', 'Cover every medical bill under 50 dollars, total 150', 'Clear all bills in Nairobi'] %}
-      <button class="pill" type="button" data-ex="{{ ex }}" style="border:0;cursor:pointer">{{ ex }}</button>{% endfor %}
+<section class="bulk-hero dark" aria-labelledby="bulk-title">
+  <div class="container">
+    <div>
+      <div class="gold-rule" aria-hidden="true"></div>
+      <span class="eyebrow accent">Big-sponsor mode</span>
+      <h1 id="bulk-title">Clear a whole group of bills in one go.</h1>
+      <p class="lead measure">Describe what you want to clear. Billkind finds the matching verified bills, you pay once with PayPal, and every biller gets its own payout and every bill its own receipt. Money goes to the billers, never to the people.</p>
+      <ul class="trust-list" style="margin-top:20px">
+        <li>{{ ui('check') }} Verified billers and low-risk bills only</li>
+        <li>{{ ui('check') }} One PayPal order, one item per bill</li>
+        <li>{{ ui('check') }} One payout batch, one item per biller</li>
+        <li>{{ ui('check') }} A receipt for every bill you clear</li>
+      </ul>
     </div>
-    <button class="btn" id="find">Find bills</button>
-    <div id="filter" class="hint" style="margin-top:12px"></div>
+    <div class="command ask-box">
+      <label for="ask">What should we clear?</label>
+      <textarea id="ask">Clear every school fee bill under 60 USD</textarea>
+      <div class="ask-examples">
+        {% for ex in ['Clear every school fee bill under 60 USD', 'Pay all electricity bills in Nigeria', 'Cover every medical bill under 50 dollars, total 150', 'Clear all bills in Nairobi'] %}
+        <button class="chip-btn" type="button" data-ex="{{ ex }}">{{ ex }}</button>{% endfor %}
+      </div>
+      <button class="btn lg light block" id="find">{{ ui('spark') }} Find bills</button>
+      <p id="filter" class="hint" style="margin:14px 0 0" aria-live="polite"></p>
+    </div>
   </div>
-  <div class="panel" id="result" hidden>
-    <div class="spread"><h3 style="margin:0" id="count"></h3><strong id="total" style="font-size:22px"></strong></div>
-    <p class="muted" id="others" style="font-size:13px"></p>
-    <div class="table-wrap"><table><thead><tr><th>Bill</th><th>Paid to</th><th>Amount</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></div>
-    <div id="pay-error" class="alert err" hidden style="margin-top:12px"></div>
-    <div id="pay-zone" style="margin-top:14px">
-      <div id="pp-buttons"></div>
-      {% if paypal_mode != 'sandbox' %}<button class="btn" id="fake-pay" style="width:100%">Pay all with the sandbox simulator</button>
-      <p class="hint">This deployment uses the local PayPal fake. With sandbox credentials, the official PayPal buttons appear here.</p>{% endif %}
-    </div>
-    <div id="done" class="alert ok" hidden></div>
+</section>
+
+<div class="container page-body">
+  <div class="grid cols-3" id="bulk-intro">
+    <div class="card flat"><span class="icon-tile">{{ ui('chat') }}</span><h3 style="margin-top:14px">1. Say it in a sentence</h3><p class="muted mb-0">A kind of bill, a place, a limit per bill and a total. AI reads it into a filter you can see.</p></div>
+    <div class="card flat"><span class="icon-tile">{{ ui('layers') }}</span><h3 style="margin-top:14px">2. Check the list</h3><p class="muted mb-0">Every matching bill with its biller, amount and due date, before you pay anything.</p></div>
+    <div class="card flat"><span class="icon-tile ok">{{ ui('bank') }}</span><h3 style="margin-top:14px">3. Pay once, billers paid</h3><p class="muted mb-0">One PayPal checkout, then each status flips to PAID live as payouts are confirmed.</p></div>
+  </div>
+  <div class="bulk-body" id="result" hidden>
+    <section class="card" aria-labelledby="count">
+      <div class="card-head"><h2 id="count"></h2><span class="badge neutral" id="cur-badge"></span></div>
+      <p class="muted" id="others" style="font-size:14px"></p>
+      <div class="table-wrap"><table><thead><tr><th>Bill</th><th>Paid to</th><th>Amount</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></div>
+    </section>
+    <aside class="card raised checkout-card" aria-label="Checkout">
+      <span class="eyebrow">Total for one checkout</span>
+      <div class="checkout-total" id="total"></div>
+      <p class="muted" style="font-size:14px;margin:10px 0 0">Charged once through PayPal. Each biller receives its own payout.</p>
+      <div id="pay-error" class="alert err" role="alert" hidden style="margin-top:16px"></div>
+      <div id="pay-zone" style="margin-top:16px">
+        <div id="pp-buttons" class="pay-row"></div>
+        {% if paypal_mode != 'sandbox' %}<button class="btn lg block" id="fake-pay">Pay all with the sandbox simulator</button>
+        <p class="hint">This deployment uses the local PayPal simulator. With sandbox credentials, the official PayPal buttons appear here.</p>{% endif %}
+      </div>
+      <div id="done" class="alert ok" role="status" hidden style="margin-top:16px"></div>
+      <div class="trust-note" style="margin-top:14px">{{ ui('shield') }}<span>Paid to the billers, never to the people. Anything that cannot be paid out is refunded to you automatically.</span></div>
+    </aside>
   </div>
 </div>
 {% endblock %}
@@ -49,19 +78,21 @@
     parts.push('total up to ' + f.max_total_usd + ' USD');
     $('filter').textContent = 'Understood as ' + (d.source === 'ai' ? '(AI) ' : '') + parts.join(', ') + '. Only verified billers and low-risk bills are included.';
     picks = d.picks; currency = d.currency || 'USD';
+    $('bulk-intro').hidden = true;
     $('result').hidden = false; $('done').hidden = true; $('pay-zone').hidden = !picks.length; $('pay-error').hidden = true;
-    $('count').textContent = picks.length ? `${picks.length} bills found` : 'No matching bills right now';
-    $('total').textContent = d.total || '';
+    $('count').textContent = picks.length ? `${picks.length} bill${picks.length === 1 ? '' : 's'} found` : 'No matching bills right now';
+    $('total').textContent = d.total || '0';
+    $('cur-badge').textContent = 'Settles in ' + currency;
     const others = Object.entries(d.others || {}).map(([c, n]) => `${n} in ${c}`).join(', ');
     $('others').textContent = others ? `Also matching but settling in another currency (separate checkout): ${others}.` : '';
     $('rows').innerHTML = '';
     picks.forEach(p => {
       const tr = document.createElement('tr'); tr.id = 'r-' + p.bill_id;
       tr.innerHTML = '<td></td><td></td><td></td><td><span class="pill grey">ready</span></td>';
-      tr.children[0].innerHTML = `<strong></strong><div class="muted" style="font-size:12px"></div>`;
+      tr.children[0].innerHTML = `<strong></strong><div class="muted" style="font-size:12.5px"></div>`;
       tr.children[0].querySelector('strong').textContent = p.category + ', ' + p.where;
       tr.children[0].querySelector('div').textContent = p.bill_id + ' · ' + p.due;
-      tr.children[1].textContent = p.biller; tr.children[2].textContent = p.amount;
+      tr.children[1].textContent = p.biller; tr.children[2].innerHTML = '<strong class="num"></strong>'; tr.children[2].firstChild.textContent = p.amount;
       $('rows').appendChild(tr);
     });
     if (picks.length) BillkindPay.mount({mode: MODE, clientId: CLIENT_ID, currency, box: $('pp-buttons'), fakeButton: $('fake-pay'), source: 'bulk',

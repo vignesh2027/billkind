@@ -1,36 +1,42 @@
-{% extends "base.html" %}{% block title %}Live wall · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui %}
+{% block title %}Live wall · Billkind{% endblock %}
 {% block main %}
-<div class="spread"><div><span class="eyebrow">Live</span><h1 style="margin:0">Bills being cleared around the world</h1>
-<p class="muted">Every dot and number below comes from real PayPal sandbox transactions recorded by this app, updated the moment PayPal confirms them.</p></div></div>
-<div class="grid cols-4 wall-kpis" style="margin:18px 0">
-  <div class="panel"><div class="kpi counter" id="k-paid">{{ stats.paid }}</div><div class="kpi-label">bills cleared</div></div>
-  <div class="panel"><div class="kpi counter" id="k-countries">{{ stats.countries }}</div><div class="kpi-label">countries</div></div>
-  <div class="panel"><div class="kpi counter" id="k-sponsors">{{ stats.sponsors }}</div><div class="kpi-label">sponsors</div></div>
-  <div class="panel"><div class="kpi" style="font-size:20px;line-height:1.3" id="k-totals">{{ stats.totals|join(' · ') or 'Nothing yet' }}</div><div class="kpi-label">paid to billers</div></div>
-</div>
-<div class="grid live-grid" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start">
-  <div class="panel" style="padding:14px">
-    <svg class="map" id="map" viewBox="0 0 1000 440" role="img" aria-label="World map of bills: violet dots are cleared bills, blue dots are open bills">
-      <g transform="translate(0,-20)">
-      {% for lon in range(-150, 181, 30) %}<line class="grat" x1="{{ (lon + 180) / 360 * 1000 }}" y1="0" x2="{{ (lon + 180) / 360 * 1000 }}" y2="500"/>{% endfor %}
-      {% for lat in range(-60, 91, 30) %}<line class="grat" x1="0" y1="{{ (90 - lat) / 180 * 500 }}" x2="1000" y2="{{ (90 - lat) / 180 * 500 }}"/>{% endfor %}
-      <path class="land" d="{% include '_land_path.txt' %}"/>
-      {% for r in open_by_country %}{% set c = countries.get(r.country) %}{% if c %}<circle class="open" cx="{{ (c[2] + 180) / 360 * 1000 }}" cy="{{ (90 - c[1]) / 180 * 500 }}" r="{{ 5 + r.n * 1.5 }}"><title>{{ c[0] }}: {{ r.n }} open</title></circle>{% endif %}{% endfor %}
-      {% for r in by_country %}{% set c = countries.get(r.country) %}{% if c %}<circle class="paid" data-country="{{ r.country }}" cx="{{ (c[2] + 180) / 360 * 1000 }}" cy="{{ (90 - c[1]) / 180 * 500 }}" r="{{ 4 + r.n * 1.2 }}"><title>{{ c[0] }}: {{ r.n }} cleared</title></circle>{% endif %}{% endfor %}
-      <g id="pings"></g>
-      </g>
-    </svg>
-    <div class="spread" style="font-size:12px;margin-top:8px"><span><span class="pill violet">cleared</span> <span class="pill">open</span></span><span class="muted">Map: Natural Earth (public domain)</span></div>
+{% set max_n = (by_country|map(attribute='n')|max) if by_country else 1 %}
+<div class="wall dark">
+  <div class="container">
+    <div class="wall-head">
+      <div>
+        <span class="live-tag"><span class="live-dot" aria-hidden="true"></span> Live</span>
+        <h1>Bills being cleared around the world</h1>
+        <p class="lead measure" style="margin:10px 0 0">Every dot and number comes from real PayPal sandbox transactions recorded by this app, updated the moment PayPal confirms them.</p>
+      </div>
+      <a class="btn light" href="/login?next=/deck">Pay a bill {{ ui('arrow') }}</a>
+    </div>
+    <div class="wall-kpis" aria-label="Totals">
+      <div class="stat"><span class="stat-value num" id="k-paid" data-count="{{ stats.paid }}" data-reveal>{{ stats.paid }}</span><span class="stat-label">bills cleared</span></div>
+      <div class="stat"><span class="stat-value num" id="k-countries" data-count="{{ stats.countries }}" data-reveal>{{ stats.countries }}</span><span class="stat-label">countries</span></div>
+      <div class="stat"><span class="stat-value num" id="k-sponsors" data-count="{{ stats.sponsors }}" data-reveal>{{ stats.sponsors }}</span><span class="stat-label">sponsors</span></div>
+      <div class="stat"><span class="stat-value sm num totals-line" id="k-totals">{{ stats.totals|join(' · ') or 'Nothing yet' }}</span><span class="stat-label">paid to billers, by currency</span></div>
+    </div>
+    <div class="map-card wall-map">
+      {% include "_map.html" %}
+      <div class="map-legend"><span><span class="legend-dot paid"></span>Paid to the biller</span><span><span class="legend-dot open"></span>Open for sponsors</span><span>Map: Natural Earth (public domain)</span></div>
+    </div>
+    <div class="wall-grid">
+      <section class="wall-feed" aria-labelledby="now-title">
+        <div class="card-head"><h2 id="now-title" style="font-size:20px">Right now</h2><span class="badge ok"><span class="live-dot" aria-hidden="true"></span> Streaming</span></div>
+        <ul class="feed" id="feed" aria-live="polite">
+        {% for e in feed %}<li><span class="k {{ e.kind }}" aria-hidden="true"></span><div><div>{{ e.message }}</div><div class="t">{{ country_name(e.country) }}{% if e.amount_minor %} &middot; {{ fmt(e.amount_minor, e.currency) }}{% endif %}</div></div></li>
+        {% else %}<li class="muted" id="feed-empty">Waiting for the first payment.</li>{% endfor %}
+        </ul>
+      </section>
+      <section class="wall-feed" aria-labelledby="bc-title">
+        <div class="card-head"><h2 id="bc-title" style="font-size:20px">Cleared by country</h2><span class="badge accent">{{ by_country|length }} {{ 'country' if by_country|length == 1 else 'countries' }}</span></div>
+        <div class="country-bars" id="by-country">{% for r in by_country %}<div class="country-bar"><span>{{ country_name(r.country) }}</span><strong class="num">{{ r.n }}</strong><div class="bar"><span style="width: {{ (r.n / max_n * 100)|round }}%"></span></div></div>{% else %}<span class="muted">No bills cleared yet.</span>{% endfor %}</div>
+        <p class="muted" style="font-size:13.5px;margin:auto 0 0;padding-top:20px">Counts include only bills whose PayPal payout to the biller succeeded. Open bills are shown on the map as blue rings.</p>
+      </section>
+    </div>
   </div>
-  <div class="panel"><h3>Right now</h3>
-    <ul class="feed" id="feed">
-    {% for e in feed %}<li><span class="k {{ e.kind }}"></span><div><div>{{ e.message }}</div><div class="t">{{ country_name(e.country) }}{% if e.amount_minor %} &middot; {{ fmt(e.amount_minor, e.currency) }}{% endif %}</div></div></li>
-    {% else %}<li class="muted" id="feed-empty">Waiting for the first payment.</li>{% endfor %}
-    </ul>
-  </div>
-</div>
-<div class="panel" style="margin-top:18px"><h3>Cleared by country</h3>
-  <div class="row" id="by-country">{% for r in by_country %}<span class="pill violet">{{ country_name(r.country) }}: {{ r.n }}</span>{% else %}<span class="muted">No bills cleared yet.</span>{% endfor %}</div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -42,7 +48,8 @@
   const add = d => {
     const empty = document.getElementById('feed-empty'); if (empty) empty.remove();
     const li = document.createElement('li');
-    li.innerHTML = `<span class="k ${d.kind}"></span><div><div></div><div class="t"></div></div>`;
+    li.innerHTML = '<span class="k" aria-hidden="true"></span><div><div></div><div class="t"></div></div>';
+    li.firstChild.classList.add(d.kind);
     li.querySelector('div > div').textContent = d.message;
     li.querySelector('.t').textContent = d.country_name + (d.amount ? ' · ' + d.amount : '');
     feed.prepend(li);
@@ -57,9 +64,9 @@
   };
   const stats = async () => {
     const s = await (await fetch('/live/stats')).json();
-    document.getElementById('k-paid').textContent = s.paid;
-    document.getElementById('k-countries').textContent = s.countries;
-    document.getElementById('k-sponsors').textContent = s.sponsors;
+    BK.countTo(document.getElementById('k-paid'), s.paid);
+    BK.countTo(document.getElementById('k-countries'), s.countries);
+    BK.countTo(document.getElementById('k-sponsors'), s.sponsors);
     document.getElementById('k-totals').textContent = s.totals.join(' · ') || 'Nothing yet';
   };
   ['listed', 'funded', 'fully_funded', 'payout_sent', 'paid', 'thanks'].forEach(k => es.addEventListener(k, ev => {

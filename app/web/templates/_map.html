@@ -1,0 +1,10 @@
+<svg class="map" id="map" viewBox="0 30 1000 400" role="img" aria-label="World map of bills. Orange dots are bills paid to their billers, blue rings are bills open for sponsors.">
+  <g transform="translate(0,-20)">
+  {% for lon in range(-150, 181, 30) %}<line class="grat" x1="{{ (lon + 180) / 360 * 1000 }}" y1="0" x2="{{ (lon + 180) / 360 * 1000 }}" y2="500"/>{% endfor %}
+  {% for lat in range(-60, 91, 30) %}<line class="grat" x1="0" y1="{{ (90 - lat) / 180 * 500 }}" x2="1000" y2="{{ (90 - lat) / 180 * 500 }}"/>{% endfor %}
+  <path class="land" d="{% include '_land_path.txt' %}"/>
+  {% for r in open_by_country %}{% set c = countries.get(r.country) %}{% if c %}<circle class="open" cx="{{ (c[2] + 180) / 360 * 1000 }}" cy="{{ (90 - c[1]) / 180 * 500 }}" r="{{ 5 + r.n * 1.5 }}"><title>{{ c[0] }}: {{ r.n }} open</title></circle>{% endif %}{% endfor %}
+  {% for r in by_country %}{% set c = countries.get(r.country) %}{% if c %}<circle class="paid" data-country="{{ r.country }}" cx="{{ (c[2] + 180) / 360 * 1000 }}" cy="{{ (90 - c[1]) / 180 * 500 }}" r="{{ 4 + r.n * 1.2 }}"><title>{{ c[0] }}: {{ r.n }} cleared</title></circle>{% endif %}{% endfor %}
+  <g id="pings"></g>
+  </g>
+</svg>

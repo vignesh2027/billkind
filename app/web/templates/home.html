@@ -1,39 +1,263 @@
-{% extends "base.html" %}{% from "_macros.html" import billcard %}
+{% extends "base.html" %}{% from "_macros.html" import billcard, ui, icon, check %}
 {% block main %}
-<section class="hero">
-  <div>
-    <span class="eyebrow">Inspired by a viral idea, built to be safe</span>
-    <h1>Swipe right on a stranger's bill. The biller gets paid. Nobody gets scammed.</h1>
-    <p class="lead">People anywhere post a real bill they cannot pay: power, water, school fees, a clinic invoice, rent. Sponsors swipe through verified, privacy-safe bill cards and pay them with PayPal. The money goes to the biller, never to the person, and you watch it land.</p>
-    <div class="row">
-      <a class="btn" href="/login?next=/deck">Start paying bills</a>
-      <a class="btn ghost" href="/login?next=/post">I need help with a bill</a>
-      <a class="btn ghost" href="/live">Watch the live wall</a>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="container hero-grid">
+    <div>
+      <span class="eyebrow">{{ ui('shield') }} Bills paid directly to the biller</span>
+      <h1 id="hero-title">Pay a stranger's bill. <em>Straight to the biller.</em></h1>
+      <p class="lead">People anywhere post a real bill they cannot pay. AI reads it and checks it. Sponsors swipe right, and PayPal sends the money to the school, clinic or utility on the bill. Never to the person.</p>
+      <div class="hero-ctas">
+        <a class="btn lg" href="/login?next=/deck">Start paying bills {{ ui('arrow') }}</a>
+        <a class="btn lg secondary" href="/login?next=/post">Get help with a bill</a>
+      </div>
+      <div class="hero-proof">
+        <span>{{ ui('check') }} Verified billers only</span>
+        <span>{{ ui('check') }} Nine checks on every bill</span>
+        <span>{{ ui('check') }} Personal details hidden</span>
+      </div>
     </div>
-    <div class="grid cols-3" style="margin-top:28px;max-width:560px">
-      <div><div class="kpi counter" id="k-paid">{{ stats.paid }}</div><div class="kpi-label">bills cleared</div></div>
-      <div><div class="kpi counter" id="k-countries">{{ stats.countries }}</div><div class="kpi-label">countries</div></div>
-      <div><div class="kpi counter" id="k-live">{{ stats.live }}</div><div class="kpi-label">bills waiting now</div></div>
+    <div class="hero-stage" aria-hidden="true">
+      {% for c in cards[:3]|reverse %}{{ billcard(c) }}{% endfor %}
+      <div class="float-chip a"><span class="icon-tile ok">{{ ui('bank') }}</span><div>Money goes to the biller<small class="muted">never to the person who posted</small></div></div>
+      <div class="float-chip b"><span class="icon-tile">{{ ui('spark') }}</span><div>Read and checked by AI<small class="muted">then nine safety checks</small></div></div>
     </div>
-    <p class="muted" style="margin-top:10px;font-size:13px">Counts come straight from the database of sandbox transactions.</p>
-  </div>
-  <div class="fan" aria-hidden="true">{% for c in cards %}{{ billcard(c) }}{% endfor %}</div>
-</section>
-<section style="margin-top:40px">
-  <h2>Why bills, and why the biller</h2>
-  <div class="grid cols-3">
-    <div class="panel"><h3>The gap is small</h3><p>37% of US adults would not cover a 400 USD emergency with cash. One in six US households is behind on utility bills. A 60 USD power bill decides whether the lights stay on.</p><small>Federal Reserve SHED 2026; NEADA June 2026</small></div>
-    <div class="panel"><h3>Crowdfunding misses it</h3><p>In a study of 437,596 medical fundraisers only 12% reached their goal and 16% got nothing. A single small bill never gets a campaign at all.</p><small>American Journal of Public Health, 2022</small></div>
-    <div class="panel"><h3>Givers want certainty</h3><p>Two thirds of donors say trust is essential, yet fewer than one in five highly trust charities. Paying a verified biller directly means you know exactly what your money did.</p><small>Give.org Donor Trust Report 2026</small></div>
   </div>
 </section>
-<section style="margin-top:40px" class="how-steps">
-  <h2>How it works</h2>
-  <div class="grid cols-4">
-    <div class="panel"><h3>Snap the bill</h3><p>AI reads the photo or PDF, fills in the biller, amount and due date, and masks personal details.</p></div>
-    <div class="panel"><h3>Nine checks</h3><p>Verified biller, edit traces, two independent readings, duplicates, velocity and more. Risky bills go to a person.</p></div>
-    <div class="panel"><h3>Swipe and pay</h3><p>Sponsors pay all or part with PayPal, in the bill's currency. Several sponsors can pool into one bill.</p></div>
-    <div class="panel"><h3>Biller paid, live</h3><p>One PayPal payout to the biller's verified account, a receipt, a PAID stamp and a thank-you, in real time.</p></div>
+
+<section class="counter-band dark" aria-label="Live totals">
+  <div class="container counter-row">
+    <div class="counter-title">
+      <strong><span class="live-dot" aria-hidden="true"></span> Live from the ledger</strong>
+      <span>Counted from payments recorded by this app. Paid to billers so far: <b id="k-totals">{{ stats.totals|join(' · ') or 'nothing yet' }}</b></span>
+    </div>
+    <div class="stat"><span class="stat-value num" id="k-paid" data-count="{{ stats.paid }}" data-reveal>{{ stats.paid }}</span><span class="stat-label">bills cleared</span></div>
+    <div class="stat"><span class="stat-value num" id="k-countries" data-count="{{ stats.countries }}" data-reveal>{{ stats.countries }}</span><span class="stat-label">countries reached</span></div>
+    <div class="stat"><span class="stat-value num" id="k-sponsors" data-count="{{ stats.sponsors }}" data-reveal>{{ stats.sponsors }}</span><span class="stat-label">sponsors giving</span></div>
+    <div class="stat"><span class="stat-value num" id="k-live" data-count="{{ stats.live }}" data-reveal>{{ stats.live }}</span><span class="stat-label">bills waiting now</span></div>
   </div>
 </section>
+
+<section class="section" aria-labelledby="how-title">
+  <div class="container">
+    <div class="section-head">
+      <div><span class="eyebrow">How it works</span><h2 id="how-title">Three steps from an unpaid bill to a PAID stamp.</h2></div>
+      <p class="lead">No campaign to write, no network to ask, no money handed to a stranger. A bill goes in, a verified biller gets paid, and everyone can see it happen.</p>
+    </div>
+    <div class="step-cards">
+      <article class="step-card" data-reveal>
+        <span class="step-n">Step 1</span>
+        <h3>Post the bill</h3>
+        <p>Take a photo or upload the PDF. AI reads the biller, amount, due date and account number, and hides names, phone numbers and addresses.</p>
+        <div class="step-visual" aria-hidden="true">
+          <div class="scan-line w80"></div><div class="scan-line w60"></div>
+          <div class="field-read"><span>Biller</span><strong>City Water Board</strong></div>
+          <div class="field-read"><span>Amount due</span><strong class="num">42.50 USD</strong></div>
+          <div class="field-read"><span>Account</span><strong>•••• 4471</strong></div>
+        </div>
+      </article>
+      <article class="step-card" data-reveal data-reveal-delay="1">
+        <span class="step-n">Step 2</span>
+        <h3>Checked, then listed</h3>
+        <p>Nine checks run on every bill: verified biller, editing traces, two independent readings, duplicates and more. Anything unusual goes to a person.</p>
+        <div class="step-visual" aria-hidden="true">
+          <div class="check-row">{{ ui('check') }} Biller verified in the registry</div>
+          <div class="check-row">{{ ui('check') }} No editing software in the file</div>
+          <div class="check-row">{{ ui('check') }} Two readings agree on amount and date</div>
+          <div class="check-row">{{ ui('check') }} Not a duplicate of another bill</div>
+          <div class="check-row">{{ ui('check') }} Due date and amount make sense</div>
+        </div>
+      </article>
+      <article class="step-card" data-reveal data-reveal-delay="2">
+        <span class="step-n">Step 3</span>
+        <h3>Swipe right. Biller paid.</h3>
+        <p>A sponsor pays all or part with PayPal. When the bill is covered, one PayPal payout goes to the biller, and the PAID stamp and a thank-you arrive live.</p>
+        <div class="step-visual" aria-hidden="true">
+          <div class="mini-actions">
+            <span class="round pass">{{ ui('x') }}</span>
+            <span class="round pay">{{ ui('check') }}</span>
+          </div>
+          <div class="center"><span class="badge solid-ok">{{ check() }} Payout confirmed by PayPal</span></div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section dark deep" aria-labelledby="trust-title">
+  <div class="container trust">
+    <div>
+      <span class="eyebrow accent">{{ ui('shield') }} The one rule</span>
+      <h2 id="trust-title" class="display" style="font-size:clamp(40px,4.6vw,80px)">Pay the biller. Never the person.</h2>
+      <p class="lead measure">Money only moves to a biller whose PayPal account a person has verified: the school, the clinic, the utility, the landlord. The worst a dishonest poster could do is get someone's real bill paid. That removes the reason to lie.</p>
+      <ul class="trust-list">
+        <li>{{ ui('check') }} Verified biller registry, checked by a person</li>
+        <li>{{ ui('check') }} Account numbers masked to the last four</li>
+        <li>{{ ui('check') }} Automatic PayPal refunds if a bill is withdrawn</li>
+        <li>{{ ui('check') }} Signed PayPal webhooks, verified on arrival</li>
+        <li>{{ ui('check') }} Duplicate and velocity limits per account and device</li>
+        <li>{{ ui('check') }} Every risk reason shown in plain words</li>
+      </ul>
+    </div>
+    <div class="flow" aria-label="Money path diagram">
+      <div class="flow-node" data-reveal><span class="icon-tile">{{ ui('heart') }}</span><div><strong>Sponsor</strong><span>Swipes right and approves in PayPal</span></div></div>
+      <div class="flow-link"><span>PayPal checkout</span></div>
+      <div class="flow-node" data-reveal data-reveal-delay="1"><span class="icon-tile">{{ ui('lock') }}</span><div><strong>Billkind</strong><span>Captures, checks the bill is covered, sends one payout</span></div></div>
+      <div class="flow-link"><span>PayPal payout with the account number</span></div>
+      <div class="flow-node biller" data-reveal data-reveal-delay="2"><span class="icon-tile">{{ ui('bank') }}</span><div><strong>Verified biller</strong><span>School, clinic, utility or landlord credits the account</span></div></div>
+      <div class="flow-node person" data-reveal data-reveal-delay="3" style="margin-top:18px"><span class="icon-tile">{{ ui('user') }}</span><div><strong>The person who posted</strong><span>Sees the PAID stamp and sends a thank-you</span></div></div>
+      <div class="flow-block">{{ ui('x') }} No money path to the person. Ever.</div>
+    </div>
+  </div>
+</section>
+
+<section class="section band-tint" aria-labelledby="wall-title">
+  <div class="container">
+    <div class="section-head">
+      <div><span class="eyebrow"><span class="live-dot" aria-hidden="true"></span> Live world wall</span><h2 id="wall-title">Watch bills clear around the world.</h2></div>
+      <div><p class="lead">Every dot and every line comes from a real PayPal sandbox transaction recorded by the app, the moment PayPal confirms it.</p><p style="margin-top:16px"><a class="btn secondary" href="/live">Open the live wall {{ ui('arrow') }}</a></p></div>
+    </div>
+    <div class="live-preview">
+      <div class="map-card" data-reveal>
+        {% include "_map.html" %}
+        <div class="map-legend"><span><span class="legend-dot paid"></span>Paid to the biller</span><span><span class="legend-dot open"></span>Open for sponsors</span><span class="muted">Map: Natural Earth (public domain)</span></div>
+      </div>
+      <div class="card ticker-card" data-reveal data-reveal-delay="1">
+        <div class="card-head"><h3>Right now</h3><span class="badge ok"><span class="live-dot" aria-hidden="true"></span> Live</span></div>
+        <ul class="feed" id="feed" aria-live="polite">
+        {% for e in feed %}<li><span class="k {{ e.kind }}" aria-hidden="true"></span><div><div>{{ e.message }}</div><div class="t">{{ country_name(e.country) }}{% if e.amount_minor %} · {{ fmt(e.amount_minor, e.currency) }}{% endif %}</div></div></li>
+        {% else %}<li class="muted" id="feed-empty">Waiting for the first payment. Pay a bill and it appears here.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section vault dark" aria-labelledby="big-title">
+  <div class="container vault-grid">
+    <div>
+      <div class="gold-rule" aria-hidden="true"></div>
+      <span class="eyebrow accent">Big-sponsor mode</span>
+      <h2 id="big-title" class="display" style="font-size:clamp(40px,4.4vw,76px)">Clear a whole city's bills in one checkout.</h2>
+      <p class="lead measure">Say it in a sentence. Billkind finds every matching verified bill, you approve one PayPal payment, and each biller receives its own payout with its own receipt. Generosity at scale, with the same proof as a single swipe.</p>
+      <div class="row" style="margin-top:28px"><a class="btn lg light" href="/login?next=/sponsor/bulk">Try big-sponsor mode</a><a class="btn lg outline-light" href="/login?next=/sponsor/agent">Set up a giving agent</a></div>
+    </div>
+    <div class="command" data-reveal>
+      <div class="command-input">{{ ui('spark') }} Clear the bills due soonest</div>
+      <div class="command-rows">
+        {% for c in cards %}<div class="command-row">{{ icon(c.category) }}<div><strong>{{ c.category_label }}, {{ c.city or c.country_name }}</strong><span>Paid to {{ c.biller }} · {{ c.due }}</span></div><strong class="num">{{ c.settle_amount }}</strong></div>{% endfor %}
+      </div>
+      <div class="command-total"><span class="muted">One PayPal checkout, one payout per biller, one receipt per bill</span><span class="badge accent">{{ cards|length }} bills</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="more-title">
+  <div class="container">
+    <div class="section-head">
+      <div><span class="eyebrow">Built in, not bolted on</span><h2 id="more-title">Giving that runs itself, with limits written in code.</h2></div>
+      <p class="lead">AI does the reading, the matching and the answering. Code decides whether money can move. Every feature has a plain fallback, and no AI output alone can pay anyone.</p>
+    </div>
+    <div class="grid cols-3">
+      <article class="feature" data-reveal>
+        <span class="icon-tile dark">{{ ui('robot') }}</span>
+        <h3>A giving agent with hard caps</h3>
+        <p>Write your rules in plain words. The agent turns them into limits you confirm, pays matching bills with your saved PayPal, and explains every choice.</p>
+        <div class="demo" aria-label="Example limits and decisions">
+          <span class="example-tag">Example</span>
+          <div class="limit-row"><span>Monthly budget</span><strong>100 USD</strong></div>
+          <div class="limit-row"><span>Most per bill</span><strong>40 USD</strong></div>
+          <div class="log-row"><span class="badge ok">paid</span> School fees, within every limit</div>
+          <div class="log-row"><span class="badge danger">blocked</span> Rent is not a kind you chose</div>
+        </div>
+      </article>
+      <article class="feature" data-reveal data-reveal-delay="1">
+        <span class="icon-tile">{{ ui('chat') }}</span>
+        <h3>Support that reads your records</h3>
+        <p>Ask where your bill is or whether the school got the money. The assistant answers only from your own records and PayPal order details, and hands off to a person when it is unsure.</p>
+        <div class="demo" aria-label="Example support conversation">
+          <span class="example-tag">Example</span>
+          <div class="bubble me">Did the school get my money?</div>
+          <div class="bubble bot">Yes. The payout to the school's PayPal account is confirmed, and your receipt is in your inbox.<small>Checked against your records</small></div>
+        </div>
+      </article>
+      <article class="feature" data-reveal data-reveal-delay="2">
+        <span class="icon-tile accent">{{ ui('flag') }}</span>
+        <h3>People in the loop</h3>
+        <p>Risky bills wait for a reviewer with every reason listed and the original document beside them. Billers see each payout with the customer account number to credit.</p>
+        <div class="demo" aria-label="Example review reasons">
+          <span class="example-tag">Example</span>
+          <div class="reason"><b>+30</b><span>File saved by photo-editing software</span></div>
+          <div class="reason"><b>+20</b><span>Line items do not add up to the total</span></div>
+          <div class="log-row"><span class="badge warn">In human review</span></div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section tight band-tint" aria-labelledby="why-title">
+  <div class="container">
+    <div class="section-head" style="margin-bottom:0">
+      <div><span class="eyebrow">Why bills</span><h2 id="why-title">Small bills never get a campaign.</h2></div>
+      <p class="lead">A 60 dollar power bill has no story arc and no network behind it, so it is never posted, and the power is cut. Paying the biller directly fixes both problems.</p>
+    </div>
+    <div class="facts" style="margin-top:clamp(28px,3vw,48px)">
+      <div class="fact" data-reveal><div class="stat-value num">37%</div><p>of US adults would not cover a 400 USD emergency expense with cash.</p><small>Federal Reserve, Economic Well-Being of U.S. Households in 2025</small></div>
+      <div class="fact" data-reveal data-reveal-delay="1"><div class="stat-value num">12%</div><p>of 437,596 US medical crowdfunding campaigns met their goal. 16% received nothing at all.</p><small>American Journal of Public Health, 2022</small></div>
+      <div class="fact" data-reveal data-reveal-delay="2"><div class="stat-value num">18.3%</div><p>of donors report high trust in charities, while 67.7% say trust is essential before giving.</p><small>BBB Wise Giving Alliance, Donor Trust Report 2026</small></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-label="Get started">
+  <div class="container cta-split">
+    <div class="cta-card sponsor" data-reveal>
+      <span class="eyebrow" style="color:var(--on-dark-link)">For sponsors</span>
+      <h2>See exactly what your money did.</h2>
+      <p>Swipe through verified bills from around the world, pay with PayPal in the bill's own currency, and watch the PAID stamp, the receipt and the thank-you arrive.</p>
+      <a class="btn lg light" href="/login?next=/deck">Start paying bills {{ ui('arrow') }}</a>
+    </div>
+    <div class="cta-card poster" data-reveal data-reveal-delay="1">
+      <span class="eyebrow accent">For people with a bill</span>
+      <h2>Ask for help with dignity.</h2>
+      <p>Post one bill in a minute. Your name, phone number and address are never shown, and you never have to handle the money. You only see it paid.</p>
+      <a class="btn lg dark" href="/login?next=/post">Post a bill</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const C = {{ countries|tojson }};
+  const feed = document.getElementById('feed');
+  const es = new EventSource('/events/stream');
+  const add = d => {
+    const empty = document.getElementById('feed-empty'); if (empty) empty.remove();
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="k" aria-hidden="true"></span><div><div></div><div class="t"></div></div>';
+    li.firstChild.classList.add(d.kind);
+    li.querySelector('div > div').textContent = d.message;
+    li.querySelector('.t').textContent = d.country_name + (d.amount ? ' · ' + d.amount : '');
+    feed.prepend(li);
+    while (feed.children.length > 6) feed.lastChild.remove();
+    const c = C[d.country];
+    if (c) {
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      p.setAttribute('cx', (c[2] + 180) / 360 * 1000); p.setAttribute('cy', (90 - c[1]) / 180 * 500);
+      p.setAttribute('r', 8); p.setAttribute('class', 'ping');
+      document.getElementById('pings').appendChild(p); setTimeout(() => p.remove(), 1700);
+    }
+  };
+  const stats = async () => {
+    const s = await (await fetch('/live/stats')).json();
+    BK.countTo(document.getElementById('k-paid'), s.paid);
+    BK.countTo(document.getElementById('k-countries'), s.countries);
+    BK.countTo(document.getElementById('k-sponsors'), s.sponsors);
+    BK.countTo(document.getElementById('k-live'), s.live);
+    document.getElementById('k-totals').textContent = s.totals.join(' · ') || 'nothing yet';
+  };
+  ['listed', 'funded', 'fully_funded', 'payout_sent', 'paid', 'thanks'].forEach(k => es.addEventListener(k, ev => { add(JSON.parse(ev.data)); stats(); }));
+})();
+</script>
 {% endblock %}

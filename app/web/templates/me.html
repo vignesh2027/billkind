@@ -1,33 +1,55 @@
-{% extends "base.html" %}{% from "_macros.html" import billcard %}{% block title %}My bills · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import billcard, ui, status_badge %}{% block title %}My bills · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
 {% block main %}
-<div class="spread"><h2 style="margin:0">My bills</h2><a class="btn" href="/post">Post a bill</a></div>
-{% if posted %}<div class="alert info" style="margin-top:12px">Bill {{ posted }} was submitted. Its status is below.</div>{% endif %}
-<div class="grid cols-2" style="margin-top:16px">
+<section class="page-head poster-hero">
+  <div class="container spread" style="align-items:end">
+    <div>
+      <span class="eyebrow accent">My bills</span>
+      <h1>Your bills, and where each one is.</h1>
+      <p class="lead measure">This page updates by itself as sponsors pay and billers confirm. You never handle the money; you only see it paid.</p>
+    </div>
+    <a class="btn lg" href="/post">{{ ui('upload') }} Post a bill</a>
+  </div>
+</section>
+<div class="container page-body stack">
+{% if posted %}<div class="alert info" role="status">{{ ui('info') }}<span>Bill {{ posted }} was submitted. Its status is below.</span></div>{% endif %}
+{% set steps = ['Posted', 'Checked', 'Open for sponsors', 'Funded', 'Biller paid'] %}
 {% for c in bills %}
-  <div id="{{ c.id }}" class="stack">
+  {% set m = {'SUBMITTED': (1, 1, ''), 'REVIEW': (1, 1, ''), 'REJECTED': (1, -1, 1), 'LISTED': (3, 3, ''), 'FUNDING': (3, 3, ''), 'FUNDED': (4, 4, ''), 'PAYOUT_SENT': (4, 4, ''), 'PAID': (5, -1, ''), 'PAYOUT_FAILED': (4, -1, 4)}.get(c.status) %}
+  <article id="{{ c.id }}" class="mybill">
     {{ billcard(c) }}
-    <div class="panel flat">
-      <div class="spread"><strong>{{ c.status_label }}</strong><span class="mono muted">{{ c.id }}</span></div>
-      {% if c.status == 'REJECTED' %}<p class="alert err" style="margin-top:10px">{{ c.reject_reason }}</p>{% endif %}
-      {% if c.status == 'REVIEW' %}<p class="muted">A person is checking this bill. Why:</p>{% endif %}
-      {% if c.status in ('REVIEW', 'REJECTED') %}{% for r in c.reasons %}<div class="reason"><b>+{{ r.points }}</b><span>{{ r.text }}</span></div>{% endfor %}{% endif %}
-      {% if c.story_source %}<p class="hint">Note written by {{ 'AI from your words' if c.story_source == 'ai' else 'a template' }}; personal details removed.</p>{% endif %}
+    <div class="mybill-status">
+      <div class="spread"><span class="mono muted">{{ c.id }}</span>{{ status_badge(c.status, c.status_label) }}</div>
+      <h2>{% if c.paid %}Paid. The biller has the money.{% elif c.status == 'REVIEW' %}A person is checking this bill.{% elif c.status == 'REJECTED' %}This bill was not accepted.{% elif c.status in ('LISTED', 'FUNDING') %}Open for sponsors.{% elif c.status in ('FUNDED', 'PAYOUT_SENT') %}Covered. Paying the biller now.{% elif c.status == 'PAYOUT_FAILED' %}We could not reach the biller yet.{% elif c.status == 'SUBMITTED' %}Running the safety checks.{% else %}{{ c.status_label }}.{% endif %}</h2>
+      {% if m %}
+      <ol class="tracker" aria-label="Progress">
+        {% for s in steps %}<li class="{{ 'fail' if m[2] == loop.index0 else 'done' if loop.index0 < m[0] else 'now' if loop.index0 == m[1] else '' }}">{{ s }}</li>{% endfor %}
+      </ol>
+      {% endif %}
+      {% if c.status == 'REJECTED' %}<p class="alert err mb-0">{{ ui('alert') }}<span>{{ c.reject_reason }}</span></p>{% endif %}
+      {% if c.status in ('REVIEW', 'REJECTED') and c.reasons %}
+        <div class="card sunken" style="padding:16px 18px"><strong style="font-size:14px">{{ 'Why it is being checked' if c.status == 'REVIEW' else 'What the checks found' }}</strong>
+        {% for r in c.reasons %}<div class="reason"><b>+{{ r.points }}</b><span>{{ r.text }}</span></div>{% endfor %}</div>
+      {% endif %}
+      {% if c.story_source %}<p class="hint mb-0">{{ ui('eye-off') }} Note written by {{ 'AI from your words' if c.story_source == 'ai' else 'a template' }}; personal details removed.</p>{% endif %}
       {% if c.paid and not c.thank_you %}
-        <form method="post" action="/me/{{ c.id }}/thanks" style="margin-top:10px">
+        <form method="post" action="/me/{{ c.id }}/thanks" class="card sunken" style="padding:18px">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <label for="t-{{ c.id }}">Send your sponsors a thank-you</label>
           <textarea id="t-{{ c.id }}" name="text" required maxlength="400" placeholder="The lights are back on. Thank you."></textarea>
-          <label class="check" style="margin-top:6px"><input type="checkbox" name="polish" value="1"> Fix spelling and grammar with AI</label>
-          <button class="btn violet small" type="submit" style="margin-top:8px">Send thank-you</button>
+          <label class="check" style="margin-top:10px"><input type="checkbox" name="polish" value="1"> Fix spelling and grammar with AI</label>
+          <button class="btn accent" type="submit" style="margin-top:12px">{{ ui('heart') }} Send thank-you</button>
         </form>
-      {% elif c.thank_you %}<div class="thanks" style="margin-top:10px">You wrote: "{{ c.thank_you }}"</div>{% endif %}
+      {% elif c.thank_you %}<div class="thanks">{{ c.thank_you }}<small>You sent this to your sponsors</small></div>{% endif %}
       {% if c.status in ('DRAFT','SUBMITTED','REVIEW','LISTED','FUNDING','FUNDED','PAYOUT_FAILED') %}
-        <form method="post" action="/me/{{ c.id }}/withdraw" onsubmit="return confirm('Withdraw this bill? Any sponsor payments are refunded in full.')" style="margin-top:10px">
-          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost small" type="submit">Withdraw bill</button></form>
+        <form method="post" action="/me/{{ c.id }}/withdraw" onsubmit="return confirm('Withdraw this bill? Any sponsor payments are refunded in full.')">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn quiet small" type="submit">Withdraw this bill</button></form>
       {% endif %}
     </div>
-  </div>
-{% else %}<div class="panel empty">No bills yet. <a href="/post">Post your first bill</a>.</div>{% endfor %}
+  </article>
+{% else %}
+  <div class="card empty"><span class="icon-tile accent">{{ ui('upload') }}</span><h2 style="font-size:24px">No bills yet</h2><p class="muted">Post your first bill. It takes about a minute, and your personal details stay private.</p><a class="btn" href="/post">Post a bill</a></div>
+{% endfor %}
 </div>
 {% endblock %}
 {% block scripts %}<script>
