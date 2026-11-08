@@ -1,0 +1,30 @@
+{# Shared shell for the AG Studio "Impact studio" pages. Expects: scope, studio_key, heading, intro, eyebrow. #}
+{% from "_macros.html" import ui %}
+<section class="page-head dark studio-head" style="background:var(--ink-950)">
+  <div class="container spread" style="align-items:end">
+    <div>
+      <span class="eyebrow accent">{{ ui('layers') }} {{ eyebrow }}</span>
+      <h1>{{ heading }}</h1>
+      <p class="lead measure">{{ intro }}</p>
+    </div>
+    <div class="studio-tags">
+      <span class="badge dark"><span class="live-dot" aria-hidden="true"></span> Live from PayPal events</span>
+      <span class="badge dark">{{ ui('spark') }} Ask in plain words</span>
+      <span class="badge dark">Built with AG Studio</span>
+    </div>
+  </div>
+</section>
+<div class="container page-body studio-body">
+  <div class="studio-toolbar spread">
+    <p class="muted mb-0" id="studio-status" aria-live="polite">Loading your dashboard...</p>
+    <div class="row">
+      <button class="btn secondary small" type="button" id="studio-mode" aria-pressed="false">{{ ui('eye-off') }} Presentation view</button>
+      <button class="btn secondary small" type="button" id="studio-reset">Reset to the built-in report</button>
+    </div>
+  </div>
+  <div class="studio-frame card flat">
+    <div id="studio" class="studio" data-scope="{{ scope }}" data-key="{{ studio_key }}" role="region" aria-label="{{ heading }} dashboard"></div>
+    <noscript><p class="alert warn">The Impact studio needs JavaScript.</p></noscript>
+  </div>
+  <p class="studio-foot muted">{{ ui('lock') }} The data on this page is built on the server from your own records only. Billkind pays billers directly, never the person, and every number here comes from recorded PayPal transactions in the sandbox. The assistant runs on an open model through Billkind's server; it sees your scoped data through the dashboard's tools and nothing else.</p>
+</div>

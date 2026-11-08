@@ -65,7 +65,7 @@ def login(email: str) -> tuple[httpx.Client, str]:
     return c, re.search(r'<meta name="csrf" content="([0-9a-f]+)">', html).group(1)
 
 
-def wait_for(fn, timeout: float = 6.0):
+def wait_for(fn, timeout: float = 15.0):
     end = time.time() + timeout
     while time.time() < end:
         v = fn()

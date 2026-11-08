@@ -19,6 +19,7 @@
       <a href="#tickets">Support tickets <span class="n{{ ' hot' if open_tickets }}">{{ open_tickets|length }}</span></a>
       <a href="#billers">Biller registry <span class="n{{ ' hot' if unverified }}">{{ billers|length }}</span></a>
       <a href="#logs">Webhooks and API logs <span class="n">{{ hooks|length }}</span></a>
+      <a href="/admin/insights">Operations studio <span class="n">AG</span></a>
     </nav>
     <div class="stack">
       <section class="card" id="review" aria-labelledby="rv-title">
@@ -80,7 +81,7 @@
         {% for m, p, s in api_calls %}<tr><td>{{ m }}</td><td class="mono">{{ p }}</td><td>{{ s }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None yet.</td></tr>{% endfor %}
         </tbody></table></div>
         <h3 style="margin-top:22px">AI calls</h3><div class="table-wrap"><table class="log-table"><thead><tr><th>Task</th><th>Model</th><th>OK</th><th>ms</th></tr></thead><tbody>
-        {% for c in ai_calls %}<tr><td>{{ c.kind }}</td><td class="mono">{{ c.model }}</td><td>{{ 'yes' if c.ok else 'no' }}</td><td>{{ c.ms }}</td></tr>{% else %}<tr><td colspan="4" class="muted">None yet.</td></tr>{% endfor %}
+        {% for c in ai_calls %}<tr><td>{{ c.kind }}</td><td class="mono">{{ c.model }}</td><td>{{ 'yes' if c.ok else 'no' }}{% if c.note %}<div class="muted" style="font-size:12px">{{ c.note }}</div>{% endif %}</td><td>{{ c.ms }}</td></tr>{% else %}<tr><td colspan="4" class="muted">None yet.</td></tr>{% endfor %}
         </tbody></table></div></section>
       </div>
     </div>

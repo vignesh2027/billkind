@@ -25,23 +25,29 @@ TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]{2,48}$")
 ALLOWED_TOOLS = {
     "view_schema", "view_page", "view_widget", "execute_query", "add_widget", "configure_widget", "position_widget",
     "remove_widget", "add_page_filter", "remove_page_filter", "add_widget_filter", "remove_widget_filter",
-    "add_page", "rename_page", "delegate_to", "complete_task",
+    "add_page", "rename_page", "delegate_to", "complete_task", "place_widget",
 }
 
 SYSTEM = """You are the analyst inside Billkind's Impact studio, an AG Studio dashboard. Billkind lets sponsors pay
 household bills (school fees, medical, electricity, water, rent, phone) directly to verified billers, never to the
 person who posted the bill.
 
-You build and adjust dashboard widgets with the Studio tools you are given. Work like this:
-1. Use view_schema (or the schema below) to find the right table and fields.
-2. Use execute_query to check the numbers before you describe them.
-3. Use add_widget, then configure_widget, to build what the user asked for. Prefer clear titles in plain words.
-4. Finish with one or two short sentences saying what you built.
+When the user asks for a view, call place_widget to add it to their own page (named "My own view" for sponsors and
+"Investigate" for operations). Choose:
+- kind: bar (ranking categories), column (few categories or time), donut (share of a whole), value (one headline
+  number), grid (a table of rows).
+- category: the field to group by (for bar, column, donut), as table.field from the data below.
+- value and aggregation: the measure, for example payments.net_usd with sum, or bills.bill_id with countd.
+- columns: for grid only, the fields to list.
+- title: short, plain words.
+You may call place_widget more than once if the user asks for several views. After the tool succeeds, reply in one
+or two short sentences saying what you added and where. If the request cannot be answered from the fields below,
+say so plainly.
 
 Rules:
-- The data contains only what this user is allowed to see. Do not speculate about anyone else's data.
-- Never state a number you did not get from an execute_query result in this conversation.
-- No personal names, account numbers or contact details exist in the data; do not invent any.
+- Only use fields listed below. The data contains only what this user is allowed to see.
+- Never state a number in your reply; the widget shows the numbers.
+- No personal names, account numbers or contact details exist; do not invent any.
 - Write plainly. No emojis, no exclamation marks.
 
 Data available:
@@ -135,7 +141,8 @@ async def respond(messages: list[dict], tools: list[dict], schema: str) -> list[
     if not convo or convo[-1]["role"] not in ("user", "tool"):
         return _text_events("Ask me for a widget, for example: money given by country, or bills paid by month.")
     sys_msg = {"role": "system", "content": SYSTEM.format(schema=schema[:6000])}
-    reply = await llm.chat_raw([sys_msg, *convo], tools=tool_defs or None, kind="insights-agent", max_tokens=900)
+    reply = await llm.chat_raw([sys_msg, *convo], tools=tool_defs or None, kind="insights-agent", max_tokens=900,
+                               models=["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
     if reply is None:
         return _text_events("The analyst is offline right now. You can still build widgets yourself: switch to edit "
                             "mode and drag fields from the data panel.")
@@ -162,4 +169,5 @@ def parse_request(body: dict) -> tuple[list[dict], list[dict]]:
     messages = body.get("messages") if isinstance(body.get("messages"), list) else []
     tools = body.get("tools") if isinstance(body.get("tools"), list) else []
     return [m for m in messages if isinstance(m, dict)], [t for t in tools if isinstance(t, dict)]
+
 

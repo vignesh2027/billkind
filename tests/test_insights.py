@@ -17,7 +17,23 @@ def _all_keys(data):
     return {k for src in data["sources"] for row in src["data"] for k in row}
 
 
+def _contribution(cid, sponsor, bill):
+    if not db.one("SELECT 1 FROM bills WHERE id = ?", (bill,)):  # a closed bill of its own, so payment tests are unaffected
+        now = db.now()
+        db.insert("bills", {"id": bill, "poster_id": "U-P00", "biller_id": "BLR-HILLS", "biller_name": "Nairobi Hills Academy",
+                            "category": "school_fees", "country": "KE", "city": "Nairobi", "currency": "USD",
+                            "amount_minor": 500, "settle_currency": "USD", "settle_minor": 500, "due_date": "2026-12-01",
+                            "status": "PAID", "account_private": "SECRET-ACCT-991", "created_at": now, "updated_at": now,
+                            "listed_at": now - 3600, "paid_at": now})
+    if not db.one("SELECT 1 FROM contributions WHERE id = ?", (cid,)):
+        db.insert("contributions", {"id": cid, "bill_id": bill, "sponsor_id": sponsor, "amount_minor": 500,
+                                    "currency": "USD", "status": "CAPTURED", "source": "swipe", "order_id": "O" + cid,
+                                    "capture_id": "C" + cid, "created_at": db.now(), "captured_at": db.now()})
+
+
 def test_sponsor_sources_are_scoped_to_the_sponsor():
+    _contribution("CON-INS-A", "U-SPONSOR", "BK-INSA")
+    _contribution("CON-INS-B", "U-BIG", "BK-INSB")
     s, _ = login("sponsor@billkind.demo")
     data = s.get("/api/insights/data").json()
     pays = next(x for x in data["sources"] if x["id"] == "payments")["data"]
@@ -29,6 +45,9 @@ def test_sponsor_sources_are_scoped_to_the_sponsor():
     bills = next(x for x in data["sources"] if x["id"] == "bills")["data"]
     assert {b["bill_id"] for b in bills} == {p["bill_id"] for p in pays}
     assert {r["id"] for r in data["relationships"]} == {"payments-bills", "decisions-bills"}
+    meta = next(x for x in data["sources"] if x["id"] == "payments")
+    assert meta["primaryKeyField"] == "payment_id" and meta["transactions"] == "all"
+    assert any(f["id"] == "net_usd" and f["format"] == "currencyFormat" for f in meta["fields"])
 
 
 def test_no_personal_data_leaves_the_server():
@@ -120,3 +139,4 @@ def test_round_cap_forces_a_final_answer(monkeypatch):
 
 def test_license_key_setting_is_read_from_env():
     assert hasattr(settings, "ag_studio_license_key")
+

@@ -11,7 +11,7 @@
 <link rel="icon" href="/static/favicon.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="preload" href="/static/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/app.css?v=10">
+<link rel="stylesheet" href="/static/app.css?v=12">
 <script>document.documentElement.classList.add('js');</script>
 {% block head %}{% endblock %}
 </head>
@@ -25,13 +25,14 @@
       <a href="/sponsor/bulk" {% if p == '/sponsor/bulk' %}aria-current="page"{% endif %}>Big sponsor</a>
       <a href="/sponsor/agent" {% if p == '/sponsor/agent' %}aria-current="page"{% endif %}>Giving agent</a>
       <a href="/sponsor" {% if p == '/sponsor' %}aria-current="page"{% endif %}>My giving</a>
+      {% if user.role == 'sponsor' %}<a href="/insights" {% if p == '/insights' %}aria-current="page"{% endif %}>Impact studio</a>{% endif %}
     {% endif %}
     {% if user.role in ('poster', 'admin') %}
       <a href="/post" {% if p.startswith('/post') %}aria-current="page"{% endif %}>Post a bill</a>
       <a href="/me" {% if p == '/me' %}aria-current="page"{% endif %}>My bills</a>
     {% endif %}
     {% if user.role == 'biller' %}<a href="/biller" {% if p == '/biller' %}aria-current="page"{% endif %}>Payouts</a>{% endif %}
-    {% if user.role == 'admin' %}<a href="/admin" {% if p == '/admin' %}aria-current="page"{% endif %}>Admin</a>{% endif %}
+    {% if user.role == 'admin' %}<a href="/admin" {% if p.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>{% endif %}
     <a href="/help" {% if p == '/help' %}aria-current="page"{% endif %}>Help</a>
   {% else %}
     <a href="/how" {% if p == '/how' %}aria-current="page"{% endif %}>How it works</a>
@@ -76,7 +77,7 @@
     </nav>
     <nav aria-label="For sponsors">
       <h2>For sponsors</h2>
-      <a href="/deck">Pay a bill</a><a href="/sponsor/bulk">Big-sponsor mode</a><a href="/sponsor/agent">Giving agent</a><a href="/sponsor">What my money did</a>
+      <a href="/deck">Pay a bill</a><a href="/sponsor/bulk">Big-sponsor mode</a><a href="/sponsor/agent">Giving agent</a><a href="/sponsor">What my money did</a><a href="/insights">Impact studio</a>
     </nav>
     <nav aria-label="For people with a bill">
       <h2>For people with a bill</h2>

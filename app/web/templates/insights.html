@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Impact studio · Billkind{% endblock %}
+{% block body_class %}app{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/ag-studio@3.1.0/dist/umd/ag-studio.min.js" defer></script>{% endblock %}
+{% block main %}
+{% with eyebrow='Impact studio', heading='What my money did', intro='Every payment you made, where it went and what it cleared, as a live dashboard you can rearrange. Ask for a new view in plain words and the assistant builds the widget for you.' %}
+{% include "_studio.html" %}
+{% endwith %}
+{% endblock %}
+{% block scripts %}<script src="/static/insights.js?v=8" defer></script>{% endblock %}

@@ -147,7 +147,8 @@ def admin_sources() -> dict:
                    source=json.loads(b["extraction"] or "{}").get("source", ""))
         bill_rows.append(row)
         for r in json.loads(b["risk_reasons"] or "[]"):
-            signals.append({"bill_id": b["id"], "signal": r.get("code", ""), "points": r.get("points", 0)})
+            signals.append({"bill_id": b["id"], "signal": r.get("code", "").replace("_", " ").capitalize(),
+                            "points": r.get("points", 0)})
     payouts = [{
         "payout_item": p["sender_item_id"], "bill_id": p["bill_id"], "status": p["status"].title(),
         "currency": p["currency"], "amount": _num(p["amount_minor"], p["currency"]),
@@ -175,6 +176,67 @@ def admin_sources() -> dict:
             {"id": "payments-bills", "source": "payments.bill_id", "target": "bills.bill_id", "type": "many-to-one"},
         ],
     }
+
+
+# Field labels and formats for AG Studio. Anything not listed is shown with its id as text.
+USD = {"format": "currencyFormat", "formatOptions": {"format": "$#,##0.00"}}
+FIELD_META = {
+    "payment_id": ("Payment", "textFormat"), "bill_id": ("Bill", "textFormat"), "paid_on": ("Paid on", "dateFormat"),
+    "amount": ("Amount (own currency)", "decimalFormat"), "currency": ("Currency", "textFormat"),
+    "amount_usd": ("Amount (USD)", USD), "refunded_usd": ("Refunded (USD)", USD), "net_usd": ("Given (USD)", USD),
+    "source": ("How it was paid", "textFormat"), "payment_status": ("Payment status", "textFormat"),
+    "paypal_order_id": ("PayPal order", "textFormat"), "paypal_capture_id": ("PayPal capture", "textFormat"),
+    "category": ("Kind of bill", "textFormat"), "country": ("Country", "textFormat"),
+    "country_code": ("Country code", "textFormat"), "city": ("City", "textFormat"), "biller": ("Biller", "textFormat"),
+    "status": ("Status", "textFormat"), "due_date": ("Due date", "dateFormat"),
+    "bill_amount": ("Bill amount (own currency)", "decimalFormat"), "bill_currency": ("Bill currency", "textFormat"),
+    "settle_currency": ("Settles in", "textFormat"), "bill_usd": ("Bill (USD)", USD),
+    "listed_on": ("Listed on", "dateFormat"), "days_to_paid": ("Days to paid", "decimalFormat"),
+    "has_thank_you": ("Thank-you received", "booleanFormat"), "decision_id": ("Decision", "textFormat"),
+    "run_on": ("Run on", "dateFormat"), "decision": ("Decision", "textFormat"), "paid_usd": ("Paid (USD)", USD),
+    "rule": ("Rule applied", "textFormat"), "reason": ("Reason", "textFormat"), "risk_score": ("Risk score", "integerFormat"),
+    "submitted_on": ("Submitted on", "dateFormat"), "signal": ("Risk signal", "textFormat"),
+    "points": ("Points", "integerFormat"), "payout_item": ("Payout item", "textFormat"), "sent_on": ("Sent on", "dateFormat"),
+    "minutes_to_final": ("Minutes to final status", "decimalFormat"), "event_id": ("Event", "textFormat"),
+    "event_type": ("Event type", "textFormat"), "received_on": ("Received on", "dateFormat"),
+    "verified": ("Signature verified", "booleanFormat"), "method": ("Verified by", "textFormat"),
+}
+TABLE_META = {
+    "payments": ("Payments", "payment_id"), "bills": ("Bills", "bill_id"), "agent_decisions": ("Agent decisions", "decision_id"),
+    "fraud_signals": ("Risk signals", None), "payouts": ("Payouts to billers", "payout_item"),
+    "webhooks": ("PayPal webhooks", "event_id"),
+}
+
+
+def with_fields(data: dict) -> dict:
+    """Attach AG Studio field definitions, names and primary keys (for live transactions) to each source."""
+    for src in data["sources"]:
+        name, key = TABLE_META.get(src["id"], (src["id"], None))
+        src["name"] = name
+        ids = list(src["data"][0].keys()) if src["data"] else [k for k in FIELD_META if k in KNOWN_FIELDS.get(src["id"], ())]
+        fields = []
+        for fid in ids:
+            label, fmt = FIELD_META.get(fid, (fid.replace("_", " ").capitalize(), "textFormat"))
+            f = {"id": fid, "name": label}
+            if isinstance(fmt, dict):
+                f.update(fmt)
+            else:
+                f["format"] = fmt
+            fields.append(f)
+        src["fields"] = fields
+        if key:
+            src["primaryKeyField"] = key
+            src["transactions"] = "all"
+    return data
+
+
+KNOWN_FIELDS = {
+    "payments": ("payment_id", "bill_id", "paid_on", "amount", "currency", "amount_usd", "refunded_usd", "net_usd",
+                 "source", "payment_status", "paypal_order_id", "paypal_capture_id"),
+    "bills": ("bill_id", "category", "country", "country_code", "city", "biller", "status", "due_date", "bill_amount",
+              "bill_currency", "settle_currency", "bill_usd", "listed_on", "paid_on", "days_to_paid", "has_thank_you"),
+    "agent_decisions": ("decision_id", "bill_id", "run_on", "decision", "paid_usd", "rule", "reason"),
+}
 
 
 def schema_summary(data: dict) -> str:

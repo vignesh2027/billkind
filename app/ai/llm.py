@@ -22,8 +22,8 @@ log = logging.getLogger("billkind.ai")
 CALLS: list[dict] = []
 
 
-def _record(kind: str, model: str, ok: bool, ms: int) -> None:
-    CALLS.append({"kind": kind, "model": model, "ok": ok, "ms": ms})
+def _record(kind: str, model: str, ok: bool, ms: int, note: str = "") -> None:
+    CALLS.append({"kind": kind, "model": model, "ok": ok, "ms": ms, "note": note[:160]})
     del CALLS[:-50]
 
 
@@ -76,31 +76,56 @@ async def chat(messages: list[dict], *, model: str | None = None, json_mode: boo
 
 
 async def chat_raw(messages: list[dict], *, tools: list[dict] | None = None, kind: str = "tools",
-                   max_tokens: int = 700) -> dict | None:
-    """One chat turn with optional tool definitions. Returns the assistant message dict or None."""
+                   max_tokens: int = 700, tool_choice: str | None = None,
+                   models: list[str] | None = None) -> dict | None:
+    """One chat turn with optional tool definitions. Returns the assistant message dict or None.
+
+    `models` is an ordered fallback list: on a rate limit (HTTP 429) or a server error the next model is tried.
+    """
     if not settings.ai_enabled:
         return None
+    import asyncio
     import time
-    model = settings.ai_text_model
-    body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens + 1200, "temperature": 0.1}
-    if tools:
-        body["tools"] = tools
-        body["tool_choice"] = "auto"
-    if "gpt-oss" in model:
-        body["reasoning_effort"] = "low"
-    t0 = time.time()
-    try:
-        async with httpx.AsyncClient(timeout=45) as h:
-            r = await h.post(URL, json=body, headers={"Authorization": f"Bearer {settings.groq_api_key}"})
-        _record(kind, model, r.status_code == 200, int((time.time() - t0) * 1000))
-        if r.status_code != 200:
-            log.warning("AI call %s failed with HTTP %s", kind, r.status_code)
+    for attempt, model in enumerate(models or [settings.ai_text_model]):
+        body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens + 1200, "temperature": 0.1}
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice or "auto"
+        if "gpt-oss" in model:
+            body["reasoning_effort"] = "low"
+        t0 = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=60) as h:
+                r = await h.post(URL, json=body, headers={"Authorization": f"Bearer {settings.groq_api_key}"})
+        except httpx.HTTPError as exc:
+            _record(kind, model, False, int((time.time() - t0) * 1000))
+            log.warning("AI call %s on %s failed: %s", kind, model, type(exc).__name__)
+            continue
+        note = ""
+        if r.status_code == 200:
+            try:
+                u = r.json().get("usage") or {}
+                note = f"{u.get('prompt_tokens', '?')} in, {u.get('completion_tokens', '?')} out"
+            except ValueError:
+                pass
+        else:
+            try:
+                note = f"HTTP {r.status_code}: " + str(r.json().get("error", {}).get("message", ""))[:140]
+            except ValueError:
+                note = f"HTTP {r.status_code}"
+        _record(kind, model, r.status_code == 200, int((time.time() - t0) * 1000), note)
+        if r.status_code == 200:
+            try:
+                return r.json()["choices"][0]["message"]
+            except (KeyError, ValueError):
+                return None
+        log.warning("AI call %s on %s failed with HTTP %s", kind, model, r.status_code)
+        if r.status_code == 429 and attempt == 0 and len(models or []) <= 1:
+            await asyncio.sleep(min(float(r.headers.get("retry-after", "2") or 2), 6))
+            continue
+        if r.status_code not in (400, 413, 429, 500, 502, 503, 504):
             return None
-        return r.json()["choices"][0]["message"]
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
-        _record(kind, model, False, int((time.time() - t0) * 1000))
-        log.warning("AI call %s failed: %s", kind, type(exc).__name__)
-        return None
+    return None
 
 
 async def chat_json(system: str, user: str, *, kind: str, max_tokens: int = 900) -> dict | None:

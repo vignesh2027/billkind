@@ -26,7 +26,21 @@ def _scope(request: Request, scope: str) -> tuple[dict, dict]:
 async def insights_data(request: Request, scope: str = "sponsor"):
     """Studio data sources for the signed-in user. A sponsor only ever receives their own rows."""
     _, data = _scope(request, scope)
-    return data
+    return insights.with_fields(data)
+
+
+@router.get("/insights")
+async def insights_page(request: Request):
+    from ..main import render
+    auth.require(request, "sponsor")
+    return render(request, "insights.html", scope="sponsor", studio_key=studio_license_key())
+
+
+@router.get("/admin/insights")
+async def admin_insights_page(request: Request):
+    from ..main import render
+    auth.require(request, "admin")
+    return render(request, "admin_insights.html", scope="admin", studio_key=studio_license_key())
 
 
 @router.post("/api/insights/agent")
