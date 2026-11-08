@@ -19,10 +19,17 @@ window.BillkindPay = (() => {
     return d;
   }
   async function capture(id, onDone, onError) {
-    const r = await post('/api/orders/' + id + '/capture');
-    const d = await r.json();
-    if (!r.ok || (d.status && d.status !== 'COMPLETED')) { onError(d.error || ('PayPal reported ' + d.status + '. You were not charged.')); return; }
-    onDone(d);
+    let d = null;
+    try {
+      const r = await post('/api/orders/' + id + '/capture');
+      d = await r.json().catch(() => null);
+      if (r.ok && d && d.status === 'COMPLETED') { onDone(d); return; }
+      if (d && d.status && d.status !== 'COMPLETED' && r.ok) { onError('PayPal reported ' + d.status + '. You were not charged.'); return; }
+    } catch (e) { d = null; }
+    // The capture call did not confirm. A webhook may have captured the payment already, so check before saying anything.
+    const s = await fetch('/api/orders/' + id + '/status').then((r) => r.json()).catch(() => null);
+    if (s && s.status === 'COMPLETED') { onDone(s); return; }
+    onError((d && d.error) || 'We could not confirm this payment yet. Check My giving in a minute before trying again.');
   }
   async function mount({mode, clientId, currency, box, fakeButton, getPicks, source, onDone, onError}) {
     box.innerHTML = '';
@@ -32,7 +39,7 @@ window.BillkindPay = (() => {
         createOrder: async () => (await create(getPicks, source, onError)).id,
         onApprove: async (data) => capture(data.orderID, onDone, onError),
         onCancel: () => onError('Payment cancelled. Nothing was charged.'),
-        onError: () => onError('PayPal reported an error. Nothing was charged.')}).render(box);
+        onError: () => onError('PayPal reported a problem. If a payment went through it appears on My giving within a minute.')}).render(box);
     } else if (fakeButton) {
       fakeButton.onclick = async () => {
         let order; try { order = await create(getPicks, source, onError); } catch (e) { return; }

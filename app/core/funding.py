@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 
 from .. import db
 from ..paypal.client import PayPalError, client, first_capture
 from . import events, notify, states
 from .money import convert, exponent, fmt, to_value
 
+log = logging.getLogger("billkind.funding")
 RESERVATION_SECONDS = 15 * 60
 TERMINAL_PAYOUT = {"SUCCESS", "FAILED", "UNCLAIMED", "RETURNED", "BLOCKED", "DENIED", "REFUNDED", "REVERSED"}
 FAILED_PAYOUT = TERMINAL_PAYOUT - {"SUCCESS"}
@@ -163,6 +165,18 @@ async def capture(order_id: str, sponsor: dict) -> dict:
     return await record_capture(resp)
 
 
+def order_outcome(order_id: str, sponsor: dict) -> dict:
+    """What Billkind has recorded for one of this sponsor's orders, for the browser to confirm against."""
+    o = db.one("SELECT * FROM orders WHERE order_id = ? AND sponsor_id = ?", (order_id, sponsor["id"]))
+    if not o:
+        return {"status": "UNKNOWN"}
+    rows = db.q("SELECT c.capture_id, c.status AS cs, b.id, b.status FROM contributions c JOIN bills b ON b.id = c.bill_id "
+                "WHERE c.order_id = ?", (order_id,))
+    captured = [r for r in rows if r["cs"] in ("CAPTURED", "PARTIALLY_REFUNDED", "REFUNDED")]
+    return {"status": "COMPLETED" if captured else o["status"], "capture_id": captured[0]["capture_id"] if captured else "",
+            "funded": [r["id"] for r in captured if r["status"] in ("FUNDED", "PAYOUT_SENT", "PAID")]}
+
+
 async def record_capture(order: dict) -> dict:
     """Apply a captured order (from the capture response, a vault order, or a webhook). Idempotent."""
     oid = order["id"]
@@ -185,8 +199,9 @@ async def record_capture(order: dict) -> dict:
                                    ref=c["id"])
             db.update("orders", "order_id", oid, status="COMPLETED", captured_at=db.now())
             for bill_id in dict.fromkeys(c["bill_id"] for c in contribs):
+                before = get_bill(bill_id)["status"]
                 b = await _after_change(bill_id)
-                if b and b["status"] == "FUNDED":
+                if b and b["status"] == "FUNDED" and before != "FUNDED":  # only the call that funded it pays out
                     funded.append(b)
         else:
             for c in contribs:
@@ -195,8 +210,13 @@ async def record_capture(order: dict) -> dict:
             db.update("orders", "order_id", oid, status=cap["status"])
             return {"status": cap["status"], "capture_id": cap["id"]}
     if funded:
-        await send_payouts(funded)
-    return {"status": "COMPLETED", "capture_id": cap["id"], "funded": [b["id"] for b in funded]}
+        try:
+            await send_payouts(funded)
+        except Exception:  # the capture stands; the automation loop retries funded bills that have no payout
+            log.exception("payout after capture %s failed", oid)
+    funded_ids = [r["id"] for r in db.q("SELECT DISTINCT b.id, b.status FROM contributions c JOIN bills b ON b.id = c.bill_id "
+                                        "WHERE c.order_id = ?", (oid,)) if r["status"] in ("FUNDED", "PAYOUT_SENT", "PAID")]
+    return {"status": "COMPLETED", "capture_id": cap["id"], "funded": funded_ids}
 
 
 async def _after_change(bill_id: str) -> dict | None:
@@ -331,22 +351,33 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
     the indicative rate, and the bill records why.
     """
     items, ready = [], []
-    for bill in bills:
-        bill = get_bill(bill["id"])
-        if bill["status"] not in ("FUNDED", "PAYOUT_FAILED"):
-            continue
-        biller = db.one("SELECT * FROM billers WHERE id = ?", (bill["biller_id"],))
-        if not biller or not biller["verified"]:
-            set_status(bill, "PAYOUT_FAILED", reject_reason="biller is not verified")
-            continue
-        attempt = db.one("SELECT COUNT(*) AS n FROM payout_items WHERE bill_id = ?", (bill["id"],))["n"]
-        sid = f"{bill['id']}-P{attempt + 1}"
-        cur, amount = bill["settle_currency"], bill["settle_minor"]
-        if force_usd and cur != "USD":
-            amount, cur = convert(amount, cur, "USD"), "USD"
-        items.append({"receiver": biller["paypal_email"], "value": to_value(amount, cur),
-                      "currency": cur, "note": _note(bill), "sender_item_id": sid, "_minor": amount})
-        ready.append((bill, biller, sid))
+    async with _lock():
+        # Claim each bill under the lock by writing its payout item first, so a webhook and a browser capture that
+        # finish together can never pay the same bill twice.
+        for bill in bills:
+            bill = get_bill(bill["id"])
+            if bill["status"] not in ("FUNDED", "PAYOUT_FAILED"):
+                continue
+            active = db.one("SELECT sender_item_id FROM payout_items WHERE bill_id = ? AND status NOT IN "
+                            "('FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED')", (bill["id"],))
+            if active:
+                continue
+            biller = db.one("SELECT * FROM billers WHERE id = ?", (bill["biller_id"],))
+            if not biller or not biller["verified"]:
+                if bill["status"] != "PAYOUT_FAILED":
+                    set_status(bill, "PAYOUT_FAILED", reject_reason="biller is not verified")
+                continue
+            attempt = db.one("SELECT COUNT(*) AS n FROM payout_items WHERE bill_id = ?", (bill["id"],))["n"]
+            sid = f"{bill['id']}-P{attempt + 1}"
+            cur, amount = bill["settle_currency"], bill["settle_minor"]
+            if force_usd and cur != "USD":
+                amount, cur = convert(amount, cur, "USD"), "USD"
+            db.insert("payout_items", {"sender_item_id": sid, "batch_id": "", "bill_id": bill["id"],
+                                       "amount_minor": amount, "currency": cur, "receiver": biller["paypal_email"],
+                                       "status": "CLAIMED", "created_at": db.now(), "updated_at": db.now()})
+            items.append({"receiver": biller["paypal_email"], "value": to_value(amount, cur),
+                          "currency": cur, "note": _note(bill), "sender_item_id": sid, "_minor": amount})
+            ready.append((bill, biller, sid))
     if not items:
         return None
     sender_batch_id = db.new_id("BATCH")
@@ -357,6 +388,8 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
                                                     "reference is in the payment note.")
     except PayPalError as exc:
         reason = exc.issue or (exc.body.get("name") if isinstance(exc.body, dict) else "")
+        for _, _, sid in ready:  # release the claims; a retry writes new items
+            db.update("payout_items", "sender_item_id", sid, status="FAILED", updated_at=db.now())
         if not force_usd and reason in CURRENCY_ISSUES and any(it["currency"] != "USD" for it in items):
             for bill, _, _ in ready:
                 db.update("bills", "id", bill["id"], fx_note=(bill["fx_note"] + " " if bill["fx_note"] else "") +
@@ -371,11 +404,8 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
                                  "status": resp["batch_header"].get("batch_status", "PENDING"),
                                  "created_at": db.now(), "updated_at": db.now()})
     for (bill, biller, sid), it in zip(ready, items):
-        db.insert("payout_items", {"sender_item_id": sid, "batch_id": batch_id, "bill_id": bill["id"],
-                                   "amount_minor": it["_minor"], "currency": it["currency"],
-                                   "receiver": biller["paypal_email"], "status": "PENDING",
-                                   "created_at": db.now(), "updated_at": db.now()})
-        set_status(bill, "PAYOUT_SENT", payout_batch_id=batch_id)
+        db.update("payout_items", "sender_item_id", sid, batch_id=batch_id, status="PENDING", updated_at=db.now())
+        set_status(get_bill(bill["id"]), "PAYOUT_SENT", payout_batch_id=batch_id)
         events.publish("payout_sent", f"Paying {biller['name']} for a {_cat(bill)} bill in "
                        f"{bill['city'] or bill['country']}", bill=bill, amount_minor=bill["settle_minor"],
                        currency=bill["settle_currency"], ref=sid)
@@ -452,8 +482,8 @@ def _on_paid(bill: dict) -> None:
 async def poll_payouts() -> int:
     """Fallback when webhooks cannot reach us: read pending batches from PayPal."""
     n = 0
-    for b in db.q("SELECT DISTINCT batch_id FROM payout_items WHERE status NOT IN "
-                  "('SUCCESS','FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED')"):
+    for b in db.q("SELECT DISTINCT batch_id FROM payout_items WHERE batch_id != '' AND status NOT IN "
+                  "('SUCCESS','FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED','CLAIMED')"):
         try:
             data = await client().get_payout_batch(b["batch_id"])
         except PayPalError:
@@ -485,3 +515,13 @@ def thank(bill_id: str, poster_id: str, text: str) -> dict:
     events.publish("thanks", f"Thank-you from {bill['city'] or bill['country']}: \"{text[:140]}\"", bill=bill,
                    audience=_sponsors(bill_id))
     return get_bill(bill_id)
+
+
+async def heal_unpaid_funded(older_than: float = 60) -> int:
+    """Funded bills with no live payout (for example a payout call that crashed) get their payout sent."""
+    rows = db.q("SELECT * FROM bills WHERE status = 'FUNDED' AND updated_at < ? AND id NOT IN (SELECT bill_id FROM "
+                "payout_items WHERE status NOT IN ('FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED'))",
+                (db.now() - older_than,))
+    if rows:
+        await send_payouts(rows)
+    return len(rows)

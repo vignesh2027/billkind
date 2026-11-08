@@ -377,8 +377,25 @@ async def api_capture(request: Request, order_id: str):
     except PayPalError as exc:
         if exc.issue == "INSTRUMENT_DECLINED":
             return JSONResponse({"error": "declined", "restart": True}, status_code=422)
+        settled = funding.order_outcome(order_id, user)
+        if settled["status"] == "COMPLETED":
+            return settled
         return JSONResponse({"error": "PayPal could not complete the payment.", "issue": exc.issue}, status_code=502)
+    except Exception:
+        # Never report a failure for money that was captured (for example a webhook captured it at the same time).
+        log.exception("capture %s raised", order_id)
+        settled = funding.order_outcome(order_id, user)
+        if settled["status"] == "COMPLETED":
+            return settled
+        return JSONResponse({"error": "We could not confirm this payment yet. Check My giving in a minute before "
+                                      "trying again.", "unconfirmed": True}, status_code=500)
     return result
+
+
+@app.get("/api/orders/{order_id}/status")
+async def api_order_status(request: Request, order_id: str):
+    user = auth.require(request, "sponsor")
+    return funding.order_outcome(order_id, user)
 
 
 @app.get("/paypal/return")

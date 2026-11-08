@@ -167,11 +167,17 @@
     return data;
   }
   async function capture(orderID) {
-    const r = await post('/api/orders/' + orderID + '/capture');
-    const data = await r.json();
-    if (!r.ok) { showError(data.error || 'The payment did not complete.'); return; }
-    if (data.status && data.status !== 'COMPLETED') { showError('PayPal reported ' + data.status + '. You were not charged.'); return; }
-    done(data);
+    let data = null;
+    try {
+      const r = await post('/api/orders/' + orderID + '/capture');
+      data = await r.json().catch(() => null);
+      if (r.ok && data && data.status === 'COMPLETED') { done(data); return; }
+      if (r.ok && data && data.status) { showError('PayPal reported ' + data.status + '. You were not charged.'); return; }
+    } catch (e) { data = null; }
+    // Not confirmed: a webhook may already have captured it, so check before showing an error.
+    const s = await fetch('/api/orders/' + orderID + '/status').then((r) => r.json()).catch(() => null);
+    if (s && s.status === 'COMPLETED') { done(s); return; }
+    showError((data && data.error) || 'We could not confirm this payment yet. Check My giving in a minute before trying again.');
   }
   function done(data) {
     document.getElementById('pay-step').hidden = true;
@@ -232,7 +238,7 @@
       createOrder: async () => (await createOrder()).id,
       onApprove: async (data) => capture(data.orderID),
       onCancel: () => showError('Payment cancelled. Nothing was charged.'),
-      onError: () => showError('PayPal reported an error. Nothing was charged.'),
+      onError: () => showError('PayPal reported a problem. If a payment went through it appears on My giving within a minute.'),
     }).render(box);
   }
   const fakeBtn = document.getElementById('fake-pay');

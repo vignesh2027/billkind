@@ -168,8 +168,118 @@ def test_foreign_currency_payout_falls_back_to_usd():
         assert left > 0 and b["settle_currency"] == "MXN"
         _pay(s, c, [{"bill_id": b["id"], "amount_minor": left}])
         assert wait_for(lambda: _status(b["id"]) == "PAID")
-        item = db.one("SELECT * FROM payout_items WHERE bill_id = ?", (b["id"],))
-        assert item["currency"] == "USD"
+        items = db.q("SELECT * FROM payout_items WHERE bill_id = ? ORDER BY sender_item_id", (b["id"],))
+        assert [i["currency"] for i in items] == ["MXN", "USD"]  # the refused MXN attempt stays on record
+        assert items[0]["status"] == "FAILED" and items[1]["status"] == "SUCCESS"
         assert "Paid out in USD" in db.one("SELECT fx_note FROM bills WHERE id = ?", (b["id"],))["fx_note"]
     finally:
         db.run("UPDATE billers SET paypal_email = 'verde-biller@business.example.com' WHERE id = 'BLR-VERDE'")
+
+
+
+_fresh = [0]
+
+
+def _fresh_bills(n):
+    """New open USD bills with a verified biller, so these tests never depend on what earlier tests used."""
+    template = db.one("SELECT * FROM bills WHERE id = 'BK-S009'")
+    ids = []
+    for _ in range(n):
+        _fresh[0] += 1
+        row = dict(template, id=f"BK-R{_fresh[0]:03d}", status="LISTED", funded_minor=0, payout_item_id="",
+                   payout_batch_id="", payout_txn_id="", thank_you="", paid_at=None, doc_sha="", phash="",
+                   account_hash="", created_at=db.now(), updated_at=db.now())
+        db.insert("bills", row)
+        ids.append(row["id"])
+    return [db.one("SELECT * FROM bills WHERE id = ?", (i,)) for i in ids]
+
+
+def _bulk_order(client, csrf, n=3):
+    bills = _fresh_bills(n)
+    r = client.post("/api/orders", json={"picks": [{"bill_id": b["id"], "amount_minor": b["settle_minor"]} for b in bills],
+                                         "source": "bulk"}, headers={"X-CSRF": csrf})
+    assert r.status_code == 200, r.text
+    return r.json()["id"], [b["id"] for b in bills]
+
+
+def _one_payout_each(bill_ids):
+    for bid in bill_ids:
+        rows = db.q("SELECT status FROM payout_items WHERE bill_id = ?", (bid,))
+        assert len(rows) == 1, (bid, rows)
+
+
+def test_webhook_captures_first_then_browser_capture_still_succeeds():
+    big, cb = login("bigsponsor@billkind.demo")
+    oid, ids = _bulk_order(big, cb)
+    # Approval emits CHECKOUT.ORDER.APPROVED; the webhook handler captures the order on the server.
+    httpx.post(f"{BASE}/fakepaypal/test/approve/{oid}", json={})
+    assert wait_for(lambda: db.one("SELECT status FROM orders WHERE order_id = ?", (oid,))["status"] == "COMPLETED")
+    r = big.post(f"/api/orders/{oid}/capture", headers={"X-CSRF": cb})
+    assert r.status_code == 200 and r.json()["status"] == "COMPLETED", r.text
+    assert set(r.json()["funded"]) == set(ids)
+    assert wait_for(lambda: all(_status(b) == "PAID" for b in ids))
+    _one_payout_each(ids)
+
+
+def test_browser_and_webhook_capture_at_the_same_moment_pay_each_biller_once(monkeypatch):
+    from app.core import funding
+    from app.paypal.client import client
+    big, cb = login("bigsponsor@billkind.demo")
+    oid, ids = _bulk_order(big, cb)
+    monkeypatch.setattr(fake, "deliver", lambda raw, headers: asyncio.sleep(0))  # no webhook: we race by hand
+    httpx.post(f"{BASE}/fakepaypal/test/approve/{oid}", json={})
+
+    async def race():
+        order = await client().capture_order(oid)
+        return await asyncio.gather(funding.record_capture(order), funding.record_capture(order),
+                                    funding.send_payouts([{"id": i} for i in ids]))
+    results = asyncio.run(race())
+    assert results[0]["status"] == results[1]["status"] == "COMPLETED"
+    monkeypatch.undo()
+    assert wait_for(lambda: all(_status(b) in ("PAYOUT_SENT", "PAID") for b in ids))
+    _one_payout_each(ids)
+    assert len({db.one("SELECT batch_id FROM payout_items WHERE bill_id = ?", (b,))["batch_id"] for b in ids}) == 1
+
+
+def test_browser_capture_first_then_late_webhook_is_a_no_op():
+    s, c = login("sponsor@billkind.demo")
+    oid, ids = _bulk_order(s, c, n=1)
+    httpx.post(f"{BASE}/fakepaypal/test/approve/{oid}", json={})
+    r = s.post(f"/api/orders/{oid}/capture", headers={"X-CSRF": c})
+    assert r.status_code == 200 and r.json()["status"] == "COMPLETED"
+    again = s.post(f"/api/orders/{oid}/capture", headers={"X-CSRF": c})  # a double click or a retry
+    assert again.status_code == 200 and again.json()["status"] == "COMPLETED"
+    assert wait_for(lambda: _status(ids[0]) == "PAID")
+    _one_payout_each(ids)
+
+
+def test_capture_endpoint_never_fails_once_money_is_captured(monkeypatch):
+    from app.core import funding
+    s, c = login("sponsor@billkind.demo")
+    oid, ids = _bulk_order(s, c, n=1)
+
+    async def broken(*a, **k):
+        raise RuntimeError("payout service down")
+    monkeypatch.setattr(fake, "deliver", lambda raw, headers: asyncio.sleep(0))
+    monkeypatch.setattr(funding, "send_payouts", broken)
+    httpx.post(f"{BASE}/fakepaypal/test/approve/{oid}", json={})
+    r = s.post(f"/api/orders/{oid}/capture", headers={"X-CSRF": c})
+    monkeypatch.undo()
+    assert r.status_code == 200 and r.json()["status"] == "COMPLETED", r.text
+    assert _status(ids[0]) == "FUNDED"
+    db.run("UPDATE bills SET updated_at = 0 WHERE id = ?", (ids[0],))
+    assert asyncio.run(funding.heal_unpaid_funded()) == 1  # the automation loop sends the missed payout
+    assert wait_for(lambda: _status(ids[0]) == "PAID")
+    _one_payout_each(ids)
+
+
+def test_order_status_endpoint_confirms_a_capture_for_its_owner_only():
+    s, c = login("sponsor@billkind.demo")
+    oid, ids = _bulk_order(s, c, n=1)
+    assert s.get(f"/api/orders/{oid}/status").json()["status"] in ("PAYER_ACTION_REQUIRED", "CREATED")
+    httpx.post(f"{BASE}/fakepaypal/test/approve/{oid}", json={})
+    assert wait_for(lambda: s.get(f"/api/orders/{oid}/status").json()["status"] == "COMPLETED")
+    out = s.get(f"/api/orders/{oid}/status").json()
+    assert out["capture_id"] and out["funded"] == ids
+    big, _ = login("bigsponsor@billkind.demo")
+    assert big.get(f"/api/orders/{oid}/status").json()["status"] == "UNKNOWN"
