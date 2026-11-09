@@ -9,7 +9,7 @@ Built for the PayPal AI Hackathon 2026. Sandbox only: no real money moves.
 | | |
 |---|---|
 | Live demo | https://applemacbook6sep2004--billkind.us-east.modal.run |
-| Demo video | (YouTube link added at submission) |
+| Demo video | https://youtu.be/b28_fd53w5E |
 | License | MIT |
 
 ## Try it in two minutes
