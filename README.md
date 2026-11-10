@@ -37,6 +37,19 @@ Billers are paid into a sandbox business account (`billkind-biller@business.exam
 
 Suggested path for judges: sign in as Poster in one browser window and post the fresh sample bill. Sign in as Sponsor in a private window, swipe right on that bill and pay. Watch the PAID stamp appear in both windows, then send a thank-you as the poster and watch it reach the sponsor.
 
+### Proof it ran in the real PayPal sandbox
+
+These payments were made on the hosted demo while recording the video, with the sandbox buyers above. The IDs are PayPal sandbox IDs (play money). Six captured orders touched eight bills, sent six payouts to the sandbox biller account and made one full refund.
+
+| What | Amount | PayPal order | Capture | Payout items to the biller |
+|---|---|---|---|---|
+| Sponsor swipes right on bill BK-JUBVJ | 40.24 USD | `7NC65463DM613935T` | `4VT22118HH4366927` | `LTFLRA5VUPDRU` |
+| Big-sponsor mode: three school fee bills in one checkout | 92.57 USD | `15M59621PW1943615` | `8X915866A3615341B` | `3R9QX34NZWKCU` (BK-S010, 33.14 USD), `A9JCPTYC8XTRE` (BK-S015, 24.81 USD), `ZS6LF78MQ8VSN` (BK-S011, 34.62 USD) |
+| Giving agent, Vault payment, BK-S013 (medical, Surabaya) | 26.90 USD | `07516995UD866213K` | `1NY31948HD8370839` | `ZPKU88CB2SNBL` |
+| Giving agent, Vault payment, BK-S003 (medical, Lagos) | 37.58 USD | `9CD57971W9445682L` | `8B386022102406219` | `WR42EUWRYBC48` |
+| Giving agent, Vault payment, BK-S004 (medical, Quezon City), clamped to the 35.52 USD left in its budget | 2,042.40 PHP | `6JT20207YC995343B` | `51X60438WV981014G` | none yet: the bill was 49% funded and stayed open |
+| Sponsor chips in on bill BK-YA7LD, then the poster withdraws the bill | 10.00 USD, refunded in full | `3P972633RA982833G` | `3964210366728263B` | none: refunded through Payments v2 |
+
 ## Why it matters
 
 | Fact | Source |
