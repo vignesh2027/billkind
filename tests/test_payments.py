@@ -38,7 +38,9 @@ def test_full_swipe_flow_pays_biller_and_sends_receipt():
     item = db.one("SELECT * FROM payout_items WHERE bill_id = ?", (b["id"],))
     assert item["status"] == "SUCCESS" and item["currency"] == "GBP" and item["amount_minor"] == b["settle_minor"]
     assert "biller@business.example.com" in item["receiver"] or item["receiver"].endswith("@business.example.com")
-    msgs = db.q("SELECT * FROM messages WHERE user_id = 'U-SPONSOR' AND kind = 'receipt' AND bill_id = ?", (b["id"],))
+    # The receipt is written just after the PAID status, so wait for it too.
+    msgs = wait_for(lambda: db.q("SELECT * FROM messages WHERE user_id = 'U-SPONSOR' AND kind = 'receipt' "
+                                 "AND bill_id = ?", (b["id"],)))
     assert msgs and "capture" in msgs[0]["body"]
     hooks = db.q("SELECT event_type, verified, method FROM webhook_events")
     assert hooks and all(h["verified"] == 1 and h["method"] == "self" for h in hooks)
