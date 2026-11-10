@@ -146,6 +146,8 @@ Guardrails that live in code, not prompts:
 | Live wall counts from the database | Exchange rates for display and non-PayPal currencies are indicative and fixed (dated in the UI) |
 | | No email is sent; receipts and notices live in the in-app inbox |
 
+Where it can pay today: every demo biller is paid into one US sandbox business account. Bills in a currency PayPal pays out in (in the demo USD, EUR, GBP, MXN and PHP) are paid out in that currency, with one retry in USD if PayPal refuses it, and bills in INR, KES, NGN, GHS, ZAR and IDR settle and pay out in USD. A real biller also needs a PayPal business account in a region where it can receive Payouts: an India-region business account gets `PAYOUT_NOT_AVAILABLE`, so an Indian school would need a PayPal-supported payout region or a partner payout rail. The first real audience that fits what works now is US households and US billers paid in USD, for example a utility shutoff notice under 100 USD, once the steps in "Path to production" are done.
+
 ## Run it locally
 
 Requirements: Python 3.12, and Tesseract for the OCR fallback (`brew install tesseract` or `apt install tesseract-ocr`).
