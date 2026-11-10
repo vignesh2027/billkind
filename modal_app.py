@@ -1,8 +1,13 @@
-"""Hosted demo on Modal: one always-on container, SQLite backed up to a Modal Volume.
+"""Hosted demo on Modal: one container that scales to zero when idle, SQLite backed up to a Modal Volume.
 
 Deploy: modal deploy modal_app.py
 The URL is https://<workspace>--billkind.us-east.modal.run (set BILLKIND_URL if Modal reports another). Secrets come from the local .env at deploy time
 (GROQ_API_KEY, SESSION_SECRET, and the PayPal sandbox values once they exist).
+
+Cost: min_containers=0, so nothing runs while nobody uses the demo. Any request, including a PayPal webhook (PayPal
+retries webhooks that time out), wakes the container, which restores the database from the Volume. It stays up for
+SCALEDOWN_WINDOW after the last request; the 30-second backups keep running in that idle time, so the Volume is
+current when it stops. Background jobs (payout polling, expiry, the daily agent run, demo upkeep) run while it is up.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ import modal
 HERE = Path(__file__).resolve().parent
 WORKSPACE = os.environ.get("MODAL_WORKSPACE", "applemacbook6sep2004")
 BASE_URL = os.environ.get("BILLKIND_URL", f"https://{WORKSPACE}--billkind.us-east.modal.run")
+SCALEDOWN_WINDOW = 20 * 60  # seconds a container stays up after its last request
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -49,8 +55,8 @@ def _dotenv() -> dict:
 secrets = [modal.Secret.from_dict(_dotenv())]
 
 
-@app.function(image=image, volumes={"/data": volume}, secrets=secrets, min_containers=1, max_containers=1,
-              cpu=1.0, memory=1024, timeout=24 * 3600)
+@app.function(image=image, volumes={"/data": volume}, secrets=secrets, min_containers=0, max_containers=1,
+              scaledown_window=SCALEDOWN_WINDOW, cpu=1.0, memory=1024, timeout=24 * 3600)
 @modal.concurrent(max_inputs=200)
 @modal.asgi_app(label="billkind")
 def web():

@@ -182,7 +182,7 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 
 ### Deploy
 
-`modal deploy modal_app.py` runs one always-on container with SQLite backed up to a Modal Volume. Secrets are read from `.env` at deploy time.
+`modal deploy modal_app.py` runs one container with SQLite backed up to a Modal Volume. It scales to zero when idle and wakes on the next request or PayPal webhook, then stays up for 20 minutes after the last request. Secrets are read from `.env` at deploy time.
 
 ## Project layout
 
