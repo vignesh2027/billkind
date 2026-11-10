@@ -26,7 +26,7 @@ Open the live demo, choose **Sign in**, and use the one-click demo accounts. No 
 | Account | What to try |
 |---|---|
 | Sponsor (`sponsor@billkind.demo`) | **Bills**: swipe right (or press the right arrow) on a bill, pay, and watch the steps tick through to PAID. **My giving** shows every payment with its PayPal order, capture and payout IDs. **Impact studio** turns it into an AG Studio dashboard; ask the assistant for a new view. |
-| Big sponsor (`bigsponsor@billkind.demo`) | **Big-sponsor mode**: type "Clear every school fee bill under 60 USD" and pay them all in one checkout. **Giving agent**: its PayPal is already saved and its rules are set, so press **Run now** and read the decision log. The budget is per calendar month across all of this sponsor's agent payments; if the log says the monthly budget is used up, write new rules with a higher monthly budget (up to 5,000 USD), confirm, and run again. Earlier payments and decisions are never changed. |
+| Big sponsor (`bigsponsor@billkind.demo`) | **Big-sponsor mode**: type "Clear every school fee bill under 60 USD" and pay them all in one checkout. **Giving agent**: its PayPal is already saved and its rules are set, so press **Run now** and read the decision log. The budget is per calendar month across all of this sponsor's agent payments. So that every judge can try it, this demo account gets a fresh budget once it is used up (at most every 15 minutes); the renewal shows in the decision log as its own entry. You can also write new rules with a higher monthly budget (up to 5,000 USD), confirm, and run again. Earlier payments and decisions are never changed. |
 | Poster (`poster@billkind.demo`) | **Post a bill**: download a fresh sample bill from the same page, upload it, check what the AI read, add a few words, and post. Each browser gets its own poster account. |
 | Admin (`admin@billkind.demo`) | Review queue with risk reasons and the original document, biller registry, payout problems, support tickets, the webhook log and the PayPal and AI call logs. The Operations studio (AG Studio) is linked from the console. |
 | Biller (`biller@billkind.demo`) | Payouts received, with the customer account number from each payout note. |
@@ -141,7 +141,7 @@ Guardrails that live in code, not prompts:
 | Real | Simulated or limited |
 |---|---|
 | Every PayPal call listed above runs against the real PayPal sandbox on the hosted demo, including real webhooks verified with PayPal's certificate | A local clone without credentials uses the built-in PayPal fake ([app/paypal/fake.py](app/paypal/fake.py)) with the same endpoints, payload shapes, signed webhooks and error codes |
-| AI extraction, fraud checks, notes, agent decisions and support answers from live model calls | Seeded open bills and billers are fictional demo data; nothing is pre-paid |
+| AI extraction, fraud checks, notes, agent decisions and support answers from live model calls | Seeded open bills and billers are fictional demo data; nothing is pre-paid. When fewer than six seeded bills (or fewer than two school fee bills under 60 USD) are still open, the demo re-lists fresh copies of the fictional bills with new IDs, new due dates and new demo households ([app/core/automation.py](app/core/automation.py)); this runs only with the sandbox or the local fake and can be turned off with `DEMO_SELF_HEAL=0` |
 | Payment state machine, refunds, payouts, webhooks, live updates | One sandbox business account receives payouts for every demo biller; real billers would need onboarding and verification |
 | Live wall counts from the database | Exchange rates for display and non-PayPal currencies are indicative and fixed (dated in the UI) |
 | | No email is sent; receipts and notices live in the in-app inbox |
@@ -157,7 +157,7 @@ python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/pip install --no-deps paypal-agent-toolkit==1.11.0
 cp .env.example .env            # add GROQ_API_KEY for AI; leave PayPal empty to use the local fake
-.venv/bin/python -m scripts.seed --reset
+.venv/bin/python -m scripts.seed --reset   # add --refresh-demo later to re-list used demo bills
 .venv/bin/uvicorn app.main:app --port 8800
 ```
 
@@ -178,7 +178,7 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 .venv/bin/python -m pytest -q
 ```
 
-60 tests run in about ten seconds against a real HTTP server and the PayPal fake (59 run by default; the 60th is the opt-in contract test against the real sandbox, described below). They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
+67 tests run in about ten seconds against a real HTTP server and the PayPal fake (66 run by default; the 67th is the opt-in contract test against the real sandbox, described below). They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, the demo upkeep (re-listed bills and budget renewal, never outside the sandbox), monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
 
 ### Deploy
 

@@ -621,6 +621,7 @@ async def agent_page(request: Request):
         spent = float(agent.month_spent_usd(a["id"], user["id"]))
     return render(request, "agent.html", agent=a, policy=json.loads(a["policy"]) if a else None,
                   decisions=decisions, spent=spent, token=automation.active_token(user["id"]),
+                  period="since the demo budget was renewed" if a and agent.budget_renewed(user["id"]) else "this month",
                   draft=request.session.pop("agent_draft", None), pledges=automation.pledges_for(user["id"]))
 
 
@@ -654,6 +655,8 @@ async def agent_run(request: Request, csrf: str = Form("")):
     user = auth.require(request, "sponsor")
     auth.check_csrf(request, csrf)
     a = db.one("SELECT * FROM agents WHERE sponsor_id = ? AND active = 1", (user["id"],))
+    if a and settings.demo_self_heal:
+        automation.renew_demo_agent_budget(user["id"])
     if a:
         await agent.run(a)
     return RedirectResponse("/sponsor/agent#log", status_code=303)

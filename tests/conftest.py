@@ -26,6 +26,7 @@ os.environ.update({
     "APP_BASE_URL": f"http://127.0.0.1:{PORT}", "PAYPAL_MODE": "fake", "AI_DISABLED": "1",
     "BACKGROUND_JOBS": "0", "FAKE_PAYOUT_DELAY": "0.2", "SESSION_SECRET": "test", "PAYPAL_WEBHOOK_ID": "",
     "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "PAYPAL_BASE_URL": "",
+    "DEMO_SELF_HEAL": "0",  # tests/test_demo_heal.py switches it on where it is under test
 })
 
 import httpx  # noqa: E402

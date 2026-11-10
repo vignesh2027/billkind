@@ -49,6 +49,9 @@ class Settings:
     upload_dir: str = field(default_factory=lambda: _env("UPLOAD_DIR", str(ROOT / "data" / "uploads")))
     session_secret: str = field(default_factory=lambda: _env("SESSION_SECRET") or secrets.token_hex(32))
     background_jobs: bool = field(default_factory=lambda: _env("BACKGROUND_JOBS", "1") == "1")
+    # Hosted demo upkeep (app/core/automation.py): re-list fictional demo bills and renew the demo big sponsor's
+    # agent budget. Only ever acts with PAYPAL_MODE fake or sandbox.
+    demo_self_heal: bool = field(default_factory=lambda: _env("DEMO_SELF_HEAL", "1") == "1")
     fake_payout_delay: float = field(default_factory=lambda: float(_env("FAKE_PAYOUT_DELAY", "2.5")))
 
     @property

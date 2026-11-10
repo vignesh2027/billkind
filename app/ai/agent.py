@@ -101,9 +101,29 @@ def _usd(minor: int, cur: str) -> Decimal:
     return Decimal(convert(minor, cur, "USD")) / 100
 
 
-def month_spent_usd(agent_id: str, sponsor_id: str) -> Decimal:
+def budget_key(sponsor_id: str) -> str:
+    return f"agent.budget_from.{sponsor_id}"
+
+
+def budget_start(sponsor_id: str) -> float:
+    """Start of the current budget period: the first of the month, or a later demo renewal in the same month."""
     start = dt.date.today().replace(day=1)
     since = dt.datetime.combine(start, dt.time()).timestamp()
+    try:
+        renewed = float(db.kv_get(budget_key(sponsor_id), "0"))
+    except ValueError:
+        renewed = 0.0
+    return max(since, renewed)
+
+
+def budget_renewed(sponsor_id: str) -> bool:
+    """True when a demo renewal started the current budget period after the first of the month."""
+    start = dt.datetime.combine(dt.date.today().replace(day=1), dt.time()).timestamp()
+    return budget_start(sponsor_id) > start
+
+
+def month_spent_usd(agent_id: str, sponsor_id: str) -> Decimal:
+    since = budget_start(sponsor_id)
     rows = db.q("SELECT amount_minor - refunded_minor AS net, currency FROM contributions WHERE sponsor_id = ? "
                 "AND source = 'agent' AND status IN ('CAPTURED','PARTIALLY_REFUNDED') AND captured_at >= ?",
                 (sponsor_id, since))

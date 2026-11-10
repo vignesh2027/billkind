@@ -1,11 +1,15 @@
-"""Scheduled automation: giving agents and recurring monthly sponsorships (both pay with PayPal Vault)."""
+"""Scheduled automation: giving agents and recurring monthly sponsorships (both pay with PayPal Vault), and the
+hosted demo's upkeep so a visitor never finds an empty deck or a giving agent with no budget left."""
 
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
+from decimal import Decimal
 
 from .. import db
+from ..config import settings
 from ..paypal.client import PayPalError
 from . import funding, notify
 from .money import convert, fmt
@@ -16,6 +20,8 @@ AGENT_INTERVAL = 24 * 3600
 
 async def run_due(now: float) -> dict:
     out = {"recurring": await run_recurring(), "agents": 0}
+    if settings.demo_self_heal:
+        out["demo"] = demo_heal(now=now)
     from ..ai import agent
     for a in db.q("SELECT * FROM agents WHERE active = 1 AND (last_run IS NULL OR last_run < ?)", (now - AGENT_INTERVAL,)):
         try:
@@ -102,3 +108,85 @@ def pledges_for(sponsor_id: str) -> list[dict]:
         r["biller"] = b["biller_name"] if b else ""
     return rows
 
+
+
+# Hosted demo upkeep ---------------------------------------------------------------------------
+# Judges open the hosted demo weeks after it was seeded. Without this, the seeded bills expire or get paid and the
+# demo big sponsor's agent reports "This month's budget is used up". Everything here touches only fictional demo
+# data, never changes an earlier payment or decision, and refuses to act outside the sandbox and the local fake.
+
+DEMO_BIG_SPONSOR = "U-BIG"
+DEMO_MIN_OPEN = 6            # re-list when fewer open demo bills than this remain
+DEMO_MIN_SCHOOL_FEES = 2     # ...or fewer open school fee bills under 60 USD (the big-sponsor mode example)
+DEMO_SCHOOL_FEE_MAX_USD = 60
+DEMO_RENEW_GAP = 15 * 60     # at most one budget renewal per 15 minutes
+
+
+def demo_mode() -> bool:
+    return settings.paypal_mode in ("fake", "sandbox")
+
+
+def _usd_minor(minor: int, cur: str) -> int:
+    try:
+        return convert(minor, cur, "USD")
+    except ValueError:
+        return 0
+
+
+def open_demo_bills() -> list[dict]:
+    return db.q("SELECT * FROM bills WHERE status IN ('LISTED','FUNDING') "
+                "AND json_extract(extraction, '$.source') = 'seed'")
+
+
+def refill_demo_bills(*, now: float | None = None, force: bool = False) -> list[str]:
+    """Re-list every fictional demo bill that has no open copy, when the open ones run low (or when forced)."""
+    if not demo_mode():
+        return []
+    from scripts import seed
+    now = now or db.now()
+    open_bills = open_demo_bills()
+    school = [b for b in open_bills if b["category"] == "school_fees"
+              and _usd_minor(funding.remaining(b), b["settle_currency"]) < DEMO_SCHOOL_FEE_MAX_USD * 100]
+    if not force and len(open_bills) >= DEMO_MIN_OPEN and len(school) >= DEMO_MIN_SCHOOL_FEES:
+        return []
+    have = {(b["biller_id"], b["currency"], b["amount_minor"]) for b in open_bills}
+    listed = []
+    for i, (_alias, biller_id, amount, cur, _days, _story) in enumerate(seed.BILLS):
+        if (biller_id, cur, seed.to_minor(amount, cur)) in have:
+            continue
+        listed.append(seed.refill_demo_bill(i, now))
+    if listed:
+        log.info("demo: re-listed %d fictional bills", len(listed))
+    return listed
+
+
+def renew_demo_agent_budget(sponsor_id: str = DEMO_BIG_SPONSOR, *, now: float | None = None,
+                            force: bool = False) -> bool:
+    """Start a fresh monthly budget for the demo big sponsor's agent once it is used up, and log it."""
+    if not demo_mode() or sponsor_id != DEMO_BIG_SPONSOR:
+        return False
+    from ..ai import agent
+    a = db.one("SELECT * FROM agents WHERE sponsor_id = ? AND active = 1 ORDER BY created_at DESC", (sponsor_id,))
+    if not a:
+        return False
+    policy = agent.validate(json.loads(a["policy"]))
+    left = Decimal(str(policy["monthly_budget_usd"])) - agent.month_spent_usd(a["id"], sponsor_id)
+    if left >= 1:
+        return False
+    now = now or db.now()
+    if not force and now - agent.budget_start(sponsor_id) < DEMO_RENEW_GAP:
+        return False
+    db.kv_set(agent.budget_key(sponsor_id), str(now))
+    db.insert("agent_decisions", {
+        "id": db.new_id("DEC"), "agent_id": a["id"], "run_id": db.new_id("RUN"), "bill_id": "", "decision": "renewed",
+        "proposed_minor": 0, "paid_minor": 0, "currency": "",
+        "reason": (f"Demo account: the budget was used up, so a fresh {policy['monthly_budget_usd']:.2f} USD budget "
+                   "started for the next visitor. Earlier payments and decisions are unchanged."),
+        "rule": "demo budget renewal", "created_at": now})
+    log.info("demo: renewed the giving agent budget for %s", sponsor_id)
+    return True
+
+
+def demo_heal(*, now: float | None = None, force: bool = False) -> dict:
+    return {"bills": refill_demo_bills(now=now, force=force),
+            "agent_budget_renewed": renew_demo_agent_budget(now=now, force=force)}

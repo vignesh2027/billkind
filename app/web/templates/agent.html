@@ -23,13 +23,13 @@
       <section class="card" aria-labelledby="active-title">
         <div class="card-head"><h2 id="active-title">Active rules</h2><span class="code-lock">{{ ui('lock') }} Enforced in code</span></div>
         <div class="row meter-row">
-          <div class="meter" role="img" aria-label="{{ '%.2f'|format(spent) }} of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used this month">
+          <div class="meter" role="img" aria-label="{{ '%.2f'|format(spent) }} of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used {{ period }}">
             <svg viewBox="0 0 148 148"><circle class="track" cx="74" cy="74" r="60"/><circle class="fill" cx="74" cy="74" r="60" stroke-dasharray="376.99" stroke-dashoffset="{{ 376.99 * (1 - pct / 100) }}"/></svg>
             <div class="meter-label"><div><strong class="num">{{ pct|round|int }}%</strong>of budget</div></div>
           </div>
           <div style="min-width:0">
             <p style="margin:0 0 8px;font-weight:600">{{ policy.note }}</p>
-            <p class="muted mb-0" style="font-size:14px"><strong class="num" style="color:var(--text)">{{ '%.2f'|format(spent) }}</strong> of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used this month</p>
+            <p class="muted mb-0" style="font-size:14px"><strong class="num" style="color:var(--text)">{{ '%.2f'|format(spent) }}</strong> of {{ '%.2f'|format(policy.monthly_budget_usd) }} USD used {{ period }}</p>
           </div>
         </div>
         <div class="limits" style="margin-top:20px">
@@ -93,7 +93,7 @@
         <div>
         {% for d in decisions %}
           <div class="decision">
-            <div><span class="badge {{ {'paid':'ok','clamped':'warn','blocked':'danger','skipped':'neutral'}[d.decision] }}">{{ d.decision }}</span>{% if d.paid %}<div class="amt">{{ d.paid }}</div>{% endif %}{% if d.proposed and d.decision in ('clamped','blocked') %}<div class="muted" style="font-size:12.5px;margin-top:4px">asked {{ d.proposed }}</div>{% endif %}</div>
+            <div><span class="badge {{ {'paid':'ok','clamped':'warn','blocked':'danger','skipped':'neutral','renewed':'neutral'}.get(d.decision, 'neutral') }}">{{ d.decision }}</span>{% if d.paid %}<div class="amt">{{ d.paid }}</div>{% endif %}{% if d.proposed and d.decision in ('clamped','blocked') %}<div class="muted" style="font-size:12.5px;margin-top:4px">asked {{ d.proposed }}</div>{% endif %}</div>
             <div>{% if d.bill_id %}<div class="bill-ref">{{ d.category }}, {{ d.where }} <span class="muted mono" style="font-weight:600">{{ d.bill_id }}</span></div>{% endif %}<div class="why">{{ d.reason }}</div>{% if d.rule %}<span class="rule">{{ ui('lock') }} rule: {{ d.rule }}</span>{% endif %}</div>
           </div>
         {% else %}

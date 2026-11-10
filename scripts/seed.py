@@ -1,6 +1,6 @@
 """Seed demo users, the verified biller registry and open bills.
 
-Usage: python -m scripts.seed [--reset]
+Usage: python -m scripts.seed [--reset] [--refresh-demo]
 
 All people, billers and bills are fictional. Nothing is pre-paid: every "cleared" number on the
 live wall comes from payments made in the running app.
@@ -78,6 +78,54 @@ BILLS = [
 ]
 
 
+def _ensure_poster(pid: str, email: str, name: str, currency: str, now: float) -> None:
+    if not db.one("SELECT 1 FROM users WHERE id = ?", (pid,)):
+        db.insert("users", {"id": pid, "email": email, "name": name, "role": "poster", "country": "",
+                            "currency": currency, "prefs": "{}", "password_hash": hash_password(DEMO_PASSWORD),
+                            "created_at": now - 60 * 86400})
+
+
+def list_demo_bill(i: int, bid: str, poster_id: str, rnd: random.Random, now: float, *, listed_at: float,
+                   refill: bool = False) -> str:
+    """List fictional demo bill number i from BILLS, due a few days from today. Returns the bill ID."""
+    alias, biller_id, amount, cur, days, story = BILLS[i]
+    b = db.one("SELECT * FROM billers WHERE id = ?", (biller_id,))
+    amount_minor = to_minor(amount, cur)
+    settle = settlement_for(cur)
+    settle_minor = amount_minor if settle == cur else convert(amount_minor, cur, settle)
+    fx = "" if settle == cur else (f"{cur} is not a PayPal settlement currency, so this bill settles in {settle} at an "
+                                   f"indicative {USD_RATES[cur]} {cur} per USD ({fmt(settle_minor, settle)}).")
+    account = f"{rnd.randint(10**7, 10**8 - 1)}"
+    extraction = {"source": "seed", "story_source": "seed", "template": i}
+    if refill:
+        extraction["demo_refill"] = True
+    db.insert("bills", {
+        "id": bid, "poster_id": poster_id, "biller_id": biller_id, "biller_name": b["name"], "category": b["category"],
+        "country": b["country"], "city": b["city"], "currency": cur, "amount_minor": amount_minor,
+        "settle_currency": settle, "settle_minor": settle_minor, "fx_note": fx,
+        "due_date": (dt.date.today() + dt.timedelta(days=days)).isoformat(),
+        "account_masked": redact.mask_account(account), "account_hash": redact.account_hash(account, biller_id),
+        "account_private": account, "status": "LISTED", "risk_score": rnd.choice([0, 0, 5, 5, 10]),
+        "risk_reasons": "[]", "decision": "list", "extraction": json.dumps(extraction),
+        "story": story, "story_consent": 1, "alias": alias, "created_at": listed_at,
+        "updated_at": now, "listed_at": listed_at,
+    })
+    return bid
+
+
+def refill_demo_bill(i: int, now: float) -> str:
+    """List a fresh copy of demo bill i under a new ID and a new fictional household."""
+    rnd = random.SystemRandom()
+    while True:
+        suffix = "".join(rnd.choices("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", k=4))
+        bid = f"BK-D{suffix}"
+        if not db.one("SELECT 1 FROM bills WHERE id = ?", (bid,)):
+            break
+    pid = f"U-D{suffix}"
+    _ensure_poster(pid, f"poster-d{suffix.lower()}@billkind.demo", BILLS[i][0] or "Demo household", BILLS[i][3], now)
+    return list_demo_bill(i, bid, pid, rnd, now, listed_at=now, refill=True)
+
+
 def reset() -> None:
     path = Path(settings.db_path)
     for p in (path, Path(str(path) + "-wal"), Path(str(path) + "-shm")):
@@ -103,33 +151,13 @@ def seed() -> None:
         billers.add("New Leaf Montessori", "school_fees", "IN", "Bengaluru", BILLER_EMAIL or "newleaf-biller@business.example.com",
                     False, [], user_id="U-BILLER", biller_id="BLR-NEWLEAF")
     rnd = random.Random(7)
-    for i, (alias, biller_id, amount, cur, days, story) in enumerate(BILLS):
+    for i in range(len(BILLS)):
         pid = f"U-P{i:02d}"
-        if not db.one("SELECT 1 FROM users WHERE id = ?", (pid,)):
-            db.insert("users", {"id": pid, "email": f"poster{i:02d}@billkind.demo", "name": alias or f"Poster {i}",
-                                "role": "poster", "country": "", "currency": cur, "prefs": "{}",
-                                "password_hash": hash_password(DEMO_PASSWORD), "created_at": now - 60 * 86400})
+        _ensure_poster(pid, f"poster{i:02d}@billkind.demo", BILLS[i][0] or f"Poster {i}", BILLS[i][3], now)
         bid = f"BK-S{i:03d}"
         if db.one("SELECT 1 FROM bills WHERE id = ?", (bid,)):
             continue
-        b = db.one("SELECT * FROM billers WHERE id = ?", (biller_id,))
-        amount_minor = to_minor(amount, cur)
-        settle = settlement_for(cur)
-        settle_minor = amount_minor if settle == cur else convert(amount_minor, cur, settle)
-        fx = "" if settle == cur else (f"{cur} is not a PayPal settlement currency, so this bill settles in {settle} at an "
-                                       f"indicative {USD_RATES[cur]} {cur} per USD ({fmt(settle_minor, settle)}).")
-        account = f"{rnd.randint(10**7, 10**8 - 1)}"
-        db.insert("bills", {
-            "id": bid, "poster_id": pid, "biller_id": biller_id, "biller_name": b["name"], "category": b["category"],
-            "country": b["country"], "city": b["city"], "currency": cur, "amount_minor": amount_minor,
-            "settle_currency": settle, "settle_minor": settle_minor, "fx_note": fx,
-            "due_date": (dt.date.today() + dt.timedelta(days=days)).isoformat(),
-            "account_masked": redact.mask_account(account), "account_hash": redact.account_hash(account, biller_id),
-            "account_private": account, "status": "LISTED", "risk_score": rnd.choice([0, 0, 5, 5, 10]),
-            "risk_reasons": "[]", "decision": "list", "extraction": json.dumps({"source": "seed", "story_source": "seed"}),
-            "story": story, "story_consent": 1, "alias": alias, "created_at": now - (20 - i) * 3600,
-            "updated_at": now, "listed_at": now - (20 - i) * 3600,
-        })
+        list_demo_bill(i, bid, pid, rnd, now, listed_at=now - (20 - i) * 3600)
     print(f"seeded: {db.one('SELECT COUNT(*) AS n FROM users')['n']} users, "
           f"{db.one('SELECT COUNT(*) AS n FROM billers')['n']} billers, {db.one('SELECT COUNT(*) AS n FROM bills')['n']} bills")
 
@@ -138,3 +166,8 @@ if __name__ == "__main__":
     if "--reset" in sys.argv:
         reset()
     seed()
+    if "--refresh-demo" in sys.argv:
+        # Re-list fictional demo bills that are no longer open and give the big sponsor's giving agent a fresh
+        # monthly budget if it is used up. Sandbox and local fake only.
+        from app.core import automation
+        print("refreshed:", automation.demo_heal(force=True))
