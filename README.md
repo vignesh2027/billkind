@@ -12,6 +12,13 @@ Built for the PayPal AI Hackathon 2026. Sandbox only: no real money moves.
 | Demo video | https://youtu.be/b28_fd53w5E |
 | License | MIT |
 
+| | |
+|---|---|
+| <img src="docs/screenshots/after/05-deck-1440.png" alt="Sponsor deck: a verified electricity bill from Lagos with the money path you, PayPal, the biller" width="420"> | <img src="docs/screenshots/after/07-paid-sheet-1440.png" alt="Payment sheet after paying: PayPal capture, bill funded, payout sent, biller confirmed and the PAID stamp" width="420"> |
+| **Swipe deck.** Verified bills, most urgent first, paid straight to the biller. | **Follow your money.** Capture, payout to the biller and the PAID stamp, live. |
+| <img src="docs/screenshots/after/11-agent-1440.png" alt="Giving agent: limits enforced in code and a decision log with paid, clamped, skipped and blocked entries" width="420"> | <img src="docs/screenshots/15-impact-studio.png" alt="Impact studio built with AG Studio: totals, the money path widget and giving by country and kind of bill" width="420"> |
+| **Giving agent.** Plain-words rules become hard limits; every decision is logged. | **Impact studio.** AG Studio dashboard of what the sponsor's money did. |
+
 ## Try it in two minutes
 
 Open the live demo, choose **Sign in**, and use the one-click demo accounts. No password needed.
