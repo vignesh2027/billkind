@@ -20,6 +20,7 @@ def _load_dotenv(path: Path) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
+        value = value.split(" #")[0].split("\t#")[0]  # inline comments, as in .env.example
         key, value = key.strip(), value.strip().strip('"').strip("'")
         os.environ.setdefault(key, value)
 
