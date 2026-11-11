@@ -16,8 +16,8 @@ STATIC = Path(__file__).resolve().parent.parent / "app" / "web" / "static"
 
 def test_landing_shows_the_flow_and_the_ar_viewer():
     html = httpx.get(BASE + "/").text
-    assert "Be the reason a bill gets stamped" in html and "Kindness, with a receipt" in html
-    assert "Your money pays the bill, never a person." in html
+    assert "Cover a stranger's bill and see it stamped" in html and "Kindness, with a receipt" in html
+    assert "Your money goes to the biller, never to the person who posted." in html
     assert "Got a bill? Drop it here" in html and "Three steps. One PAID stamp." in html
     # The biller-not-person rule is said once in the hero, not three times.
     hero = html.split('aria-labelledby="hero-title"', 1)[1].split("</section>", 1)[0]

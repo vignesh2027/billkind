@@ -1,17 +1,19 @@
 {% extends "base.html" %}{% from "_macros.html" import ui, icon %}
-{% block head %}<link rel="preload" href="/static/hero-still.webp?v=2" as="image" type="image/webp" fetchpriority="high">{% endblock %}
+{% block head %}<link rel="preload" href="/static/hero-still.webp?v=2" as="image" type="image/webp" fetchpriority="high">
+<link rel="preload" href="/static/fonts/bricolage-grotesque-currency.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>{% endblock %}
 {% block main %}
 <section class="hero" aria-labelledby="hero-title">
   <div class="container hero-grid">
     <div>
       <span class="eyebrow">Kindness, with a receipt</span>
-      <h1 id="hero-title">Be the reason a bill gets stamped <em class="grad-text">PAID.</em></h1>
-      <p class="lead">People post the bills they're behind on, from power and water to rent and school fees. We check every one before it goes live. Cover all of it or just a slice with PayPal, and the money goes to the company that sent the bill.</p>
+      <h1 id="hero-title">Cover a stranger's bill and see it stamped <em class="grad-text">PAID.</em></h1>
+      <p class="lead">People post the power, water, rent, school and medical bills they're behind on, and we check each one before it goes live. Pay all of a bill or part of it with PayPal.</p>
       <div class="hero-ctas">
         <a class="btn lg" href="/login?next=/deck">Pay a bill {{ ui('arrow') }}</a>
         <a class="btn lg secondary" href="/login?next=/post">Got a bill? Drop it here</a>
       </div>
-      <p class="hero-trust"><strong>Your money pays the bill, never a person.</strong> Whoever posted it stays private, and you get the receipt.</p>
+      <p class="hero-trust"><strong>Your money goes to the biller, never to the person who posted.</strong> Their name stays private, and you get a receipt once the biller is paid.</p>
     </div>
     <div class="hero-stage hero3d" id="hero3d" aria-hidden="true">
       <img class="hero3d-still" src="/static/hero-still.webp?v=2" alt="" width="1000" height="988" fetchpriority="high">
@@ -36,7 +38,7 @@
   <div class="container">
     <div class="section-head">
       <div><span class="eyebrow">How it works</span><h2 id="how-title">Three steps. One PAID stamp.</h2></div>
-      <p class="lead">Skip the fundraiser and the awkward ask. Post the bill, then watch it get paid.</p>
+      <p class="lead">You don't have to tell your whole story or ask friends for money. Post the bill and we'll tell you when it's paid.</p>
     </div>
     <ol class="steps3d">
       <li class="step3d" data-reveal>
@@ -65,8 +67,8 @@
   <div class="container trust">
     <div>
       <span class="eyebrow accent">The one rule</span>
-      <h2 id="trust-title" class="display" style="font-size:clamp(40px,4.6vw,80px)">Money goes to the biller. Period.</h2>
-      <p class="lead measure">We only pay billers whose PayPal account a real person has checked, like a school, a clinic or a landlord. So the worst a dishonest poster can pull off is getting a real bill paid. There's nothing in it for a liar.</p>
+      <h2 id="trust-title" class="display" style="font-size:clamp(40px,4.6vw,80px)">Only the biller gets paid.</h2>
+      <p class="lead measure">We only send money to billers on our verified list, like schools, clinics, utilities and landlords. If a poster lies, the worst that happens is a real bill gets paid.</p>
       <ul class="trust-list">
         <li>{{ ui('check') }} Verified biller registry, checked by a person</li>
         <li>{{ ui('check') }} Account numbers masked to the last four</li>
@@ -80,7 +82,7 @@
       <li data-reveal><span class="mp-n">1</span><div><strong>Sponsor</strong><span>Approves the payment in PayPal checkout</span></div></li>
       <li data-reveal data-reveal-delay="1"><span class="mp-n">2</span><div><strong>Billkind</strong><span>Captures it, checks the bill is covered, sends one payout</span></div></li>
       <li class="to-biller" data-reveal data-reveal-delay="2"><span class="mp-n">3</span><div><strong>Verified biller</strong><span>Gets the PayPal payout with the account number to credit</span></div></li>
-      <li class="no-path" data-reveal data-reveal-delay="3"><div><strong>The person who posted</strong><span>Sees the PAID stamp and sends a thank-you. No money ever flows to them.</span></div></li>
+      <li class="no-path" data-reveal data-reveal-delay="3"><div><strong>The person who posted</strong><span>Sees the PAID stamp and can send a thank-you. No money goes to them.</span></div></li>
     </ol>
   </div>
 </section>
@@ -88,13 +90,13 @@
 <section class="section agentic" aria-labelledby="agent-title">
   <div class="container agentic-grid">
     <div>
-      <span class="eyebrow">Agentic giving</span>
+      <span class="eyebrow">Giving agent</span>
       <h2 id="agent-title">Set your rules once. Your giving agent pays by them.</h2>
-      <p class="lead">Write what you want to support in plain words, like "up to 100 USD a month for school fees, never more than 40 per bill." The agent turns that into limits you confirm, then pays matching bills with your saved PayPal and writes down why.</p>
+      <p class="lead">Write what you want to support in plain words, like "up to $100 a month for school fees, never more than $40 per bill." The agent turns that into limits you confirm, then pays matching bills with your saved PayPal and writes down why.</p>
       <ul class="agentic-points">
-        <li><strong>The AI suggests. Code decides.</strong> Budget, per-bill cap, kinds of bill and risk limit are checked in code before any money moves.</li>
+        <li><strong>You set the limits.</strong> Your budget, per-bill cap, bill types and risk limit are checked in code before any money moves.</li>
         <li><strong>Pays while you're away.</strong> PayPal Vault saves your PayPal once, so the agent can pay inside your limits. Stop it any time.</li>
-        <li><strong>Nothing hidden.</strong> Every payment, skip and block lands in the decision log.</li>
+        <li><strong>Every call is logged.</strong> Each payment, skip and block shows up in the decision log.</li>
       </ul>
       <div class="row" style="margin-top:28px"><a class="btn lg" href="/login?next=/sponsor/agent">Set up a giving agent {{ ui('arrow') }}</a><a class="btn lg secondary" href="/login?next=/sponsor/bulk">Clear many bills at once</a></div>
     </div>
@@ -142,8 +144,8 @@
   <div class="container vault-grid">
     <div>
       <span class="eyebrow accent">Big-sponsor mode</span>
-      <h2 id="big-title" class="display" style="font-size:clamp(40px,4.4vw,76px)">Clear a whole city's bills in one checkout.</h2>
-      <p class="lead measure">Type what you want, like "clear the bills due soonest." Billkind rounds up every verified match. You approve one PayPal payment, and each biller gets its own payout and receipt.</p>
+      <h2 id="big-title" class="display" style="font-size:clamp(40px,4.4vw,76px)">Clear a stack of bills in one checkout.</h2>
+      <p class="lead measure">Type what you want, like "clear the bills due soonest." Billkind finds the verified bills that match, up to $2,000 per checkout. You approve one PayPal payment, each biller gets its own payout, and you get a receipt for every bill.</p>
       <div class="row" style="margin-top:28px"><a class="btn lg light" href="/login?next=/sponsor/bulk">Try big-sponsor mode</a></div>
     </div>
     <div class="command" data-reveal>
@@ -159,8 +161,8 @@
 <section class="section" aria-labelledby="more-title">
   <div class="container">
     <div class="section-head">
-      <div><span class="eyebrow">Also built in</span><h2 id="more-title">People stay in the loop.</h2></div>
-      <p class="lead">AI does the reading and the answering. Code decides whether money moves, and nothing pays out on the AI's say-so alone. If the AI is offline, a plain fallback takes over.</p>
+      <div><span class="eyebrow">Also built in</span><h2 id="more-title">A person checks anything odd.</h2></div>
+      <p class="lead">The AI reads bills and answers questions, but it can't move money on its own. If it's down, the app falls back to simple rules.</p>
     </div>
     <div class="grid cols-2">
       <article class="feature" data-reveal>
@@ -190,10 +192,10 @@
   <div class="container">
     <div class="section-head" style="margin-bottom:0">
       <div><span class="eyebrow">Why bills</span><h2 id="why-title">Small bills never get a campaign.</h2></div>
-      <p class="lead">Nobody starts a fundraiser for a 60 dollar power bill. There's no big story to tell, so it sits unpaid until the lights go out. Billkind is built for exactly that bill.</p>
+      <p class="lead">Nobody starts a fundraiser for a $60 power bill. There's no big story to tell, so it sits unpaid until the lights go out. That's the bill Billkind is for.</p>
     </div>
     <div class="facts" style="margin-top:clamp(28px,3vw,48px)">
-      <div class="fact" data-reveal><div class="stat-value num">37%</div><p>of US adults would not cover a 400 USD emergency expense with cash.</p><small>Federal Reserve, Economic Well-Being of U.S. Households in 2025</small></div>
+      <div class="fact" data-reveal><div class="stat-value num">37%</div><p>of US adults would not cover a $400 emergency expense with cash.</p><small>Federal Reserve, Economic Well-Being of U.S. Households in 2025</small></div>
       <div class="fact" data-reveal data-reveal-delay="1"><div class="stat-value num">12%</div><p>of 437,596 US medical crowdfunding campaigns met their goal. 16% received nothing at all.</p><small>American Journal of Public Health, 2022</small></div>
       <div class="fact" data-reveal data-reveal-delay="2"><div class="stat-value num">18.3%</div><p>of donors report high trust in charities, while 67.7% say trust is essential before giving.</p><small>BBB Wise Giving Alliance, Donor Trust Report 2026</small></div>
     </div>
@@ -205,13 +207,13 @@
     <div class="cta-card sponsor" data-reveal>
       <span class="eyebrow" style="color:var(--on-dark-link)">For sponsors</span>
       <h2>See exactly what your money did.</h2>
-      <p>Swipe through verified bills from around the world and pay in the bill's own currency. Then watch the PAID stamp land and the thank-you roll in.</p>
+      <p>Swipe through verified bills from around the world and pay in the bill's own currency. You get a receipt when the biller is paid, and a thank-you note if the poster sends one.</p>
       <a class="btn lg light" href="/login?next=/deck">Pay a bill {{ ui('arrow') }}</a>
     </div>
     <div class="cta-card poster" data-reveal data-reveal-delay="1">
       <span class="eyebrow accent">For people with a bill</span>
       <h2>Behind on a bill? Let's get it paid.</h2>
-      <p>Posting takes about a minute, and your name, phone number and address stay private. When someone covers it, the money goes straight to your biller and the good news comes to you.</p>
+      <p>Posting takes about a minute, and your name, phone number and address stay private. If a sponsor covers it, the money goes straight to your biller and we let you know.</p>
       <a class="btn lg dark" href="/login?next=/post">Drop a bill</a>
     </div>
   </div>
