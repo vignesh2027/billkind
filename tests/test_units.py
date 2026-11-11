@@ -146,3 +146,33 @@ def test_story_never_quotes_the_account_reference():
                                            words="Fees for account ab-12cd-34ef are due", names=[],
                                            accounts=["AB12CD34EF"]))
     assert source == "template" and "34" not in text and "[number]" in text
+
+
+def test_webhook_cert_url_must_be_paypals_cert_path():
+    from app.paypal import webhooks
+    assert not webhooks.cert_url_allowed("https://www.paypal.com/x")
+    assert not webhooks.cert_url_allowed("https://api.paypal.com/v1/notifications/certs/X?a=1")
+
+
+def test_webhook_falls_back_to_the_verify_api_only_on_network_errors(monkeypatch):
+    import asyncio
+    import httpx
+    from app.paypal import client as client_mod, webhooks
+    calls = []
+
+    async def fake_verify(**kw):
+        calls.append(kw)
+        return "SUCCESS"
+    monkeypatch.setattr(client_mod.client(), "verify_webhook_signature", fake_verify)
+    headers = {"PAYPAL-TRANSMISSION-ID": "t", "PAYPAL-TRANSMISSION-TIME": "now", "PAYPAL-TRANSMISSION-SIG": "AAAA",
+               "PAYPAL-AUTH-ALGO": "SHA256withRSA",
+               "PAYPAL-CERT-URL": "https://api.paypal.com/v1/notifications/certs/CERT-missing"}
+    not_found = httpx.MockTransport(lambda req: httpx.Response(404))
+    ok, method, _ = asyncio.run(webhooks.verify(headers, b"{}", {}, webhook_id="WH", transport=not_found))
+    assert not ok and method == "self" and not calls  # a 404 is not a reason to spend a PayPal API call
+
+    def down(req):
+        raise httpx.ConnectError("down")
+    headers["PAYPAL-CERT-URL"] = "https://api.paypal.com/v1/notifications/certs/CERT-other"
+    ok, method, _ = asyncio.run(webhooks.verify(headers, b"{}", {}, webhook_id="WH", transport=httpx.MockTransport(down)))
+    assert ok and method == "api" and len(calls) == 1

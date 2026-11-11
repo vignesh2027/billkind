@@ -34,13 +34,20 @@ def _adopt_order(order_id: str, capture: dict) -> None:
 
 def record(event: dict, verified: bool, method: str, note: str) -> bool:
     """Store the event. Returns False if this event id was already processed."""
-    existing = db.one("SELECT processed FROM webhook_events WHERE id = ?", (event.get("id", ""),))
+    existing = db.one("SELECT processed, verified FROM webhook_events WHERE id = ?", (event.get("id", ""),))
     if existing and existing["processed"]:
         return False
+    # Only verified deliveries keep their payload: anyone can post to the endpoint, so a rejected one is logged as a
+    # short line for the admin view, never stored whole.
+    payload = json.dumps(event)[:20000] if verified else ""
     if not existing:
-        db.insert("webhook_events", {"id": event.get("id", db.new_id("WH")), "event_type": event.get("event_type", ""),
-                                     "received_at": db.now(), "verified": 1 if verified else 0, "method": method,
-                                     "note": note, "payload": json.dumps(event)[:20000]})
+        db.insert("webhook_events", {"id": str(event.get("id") or db.new_id("WH"))[:80],
+                                     "event_type": str(event.get("event_type", ""))[:80], "received_at": db.now(),
+                                     "verified": 1 if verified else 0, "method": method, "note": note[:300],
+                                     "payload": payload})
+    elif verified and not existing["verified"]:  # the genuine delivery of an id a forged post used first
+        db.run("UPDATE webhook_events SET verified = 1, method = ?, note = ?, payload = ? WHERE id = ?",
+               (method, note[:300], payload, event.get("id", "")))
     return True
 
 

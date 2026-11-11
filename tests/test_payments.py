@@ -44,8 +44,10 @@ def test_full_swipe_flow_pays_biller_and_sends_receipt():
     assert msgs and "capture" in msgs[0]["body"]
     hooks = db.q("SELECT event_type, verified, method FROM webhook_events")
     assert hooks and all(h["verified"] == 1 and h["method"] == "self" for h in hooks)
-    ev = db.q("SELECT kind FROM events WHERE bill_id = ? AND public = 1", (b["id"],))
-    assert {"funded", "fully_funded", "payout_sent", "paid"} <= {e["kind"] for e in ev}
+    # The public "paid" event follows the receipts, so wait for it as well.
+    kinds = wait_for(lambda: {"funded", "fully_funded", "payout_sent", "paid"} <= {
+        e["kind"] for e in db.q("SELECT kind FROM events WHERE bill_id = ? AND public = 1", (b["id"],))})
+    assert kinds
 
 
 def test_pooled_partial_funding_one_payout():
@@ -57,8 +59,9 @@ def test_pooled_partial_funding_one_payout():
     _pay(big, cb, [{"bill_id": b["id"], "amount_minor": b["settle_minor"] - 2000}])
     assert wait_for(lambda: _status(b["id"]) == "PAID")
     assert db.one("SELECT COUNT(*) AS n FROM payout_items WHERE bill_id = ?", (b["id"],))["n"] == 1
-    receipts = db.q("SELECT user_id FROM messages WHERE kind = 'receipt' AND bill_id = ?", (b["id"],))
-    assert {r["user_id"] for r in receipts} == {"U-SPONSOR", "U-BIG"}
+    # Receipts are written just after the PAID status.
+    assert wait_for(lambda: {r["user_id"] for r in db.q("SELECT user_id FROM messages WHERE kind = 'receipt' AND "
+                                                        "bill_id = ?", (b["id"],))} == {"U-SPONSOR", "U-BIG"})
 
 
 def test_reservation_blocks_overfunding():
@@ -145,6 +148,8 @@ def test_webhook_with_bad_signature_is_rejected_and_duplicates_ignored():
         "PAYPAL-TRANSMISSION-ID": "x", "PAYPAL-TRANSMISSION-TIME": "t", "PAYPAL-TRANSMISSION-SIG": "AAAA",
         "PAYPAL-CERT-URL": "https://attacker.example.com/cert.pem", "PAYPAL-AUTH-ALGO": "SHA256withRSA"})
     assert r.status_code == 400
+    forged = db.one("SELECT verified, payload FROM webhook_events WHERE id = 'WH-FORGED'")
+    assert forged and forged["verified"] == 0 and forged["payload"] == ""  # logged, never stored whole
     # Replay a genuine signed event: the second delivery is a no-op.
     genuine = db.one("SELECT id, payload FROM webhook_events WHERE verified = 1 AND processed = 1 LIMIT 1")
     from app.core import webhook_handlers

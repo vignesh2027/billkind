@@ -781,6 +781,8 @@ async def paypal_webhook(request: Request):
         event = json.loads(raw)
     except ValueError:
         return JSONResponse({"error": "bad json"}, status_code=400)
+    if not isinstance(event, dict):
+        return JSONResponse({"error": "bad json"}, status_code=400)
     ok, method, note = await webhooks.verify(dict(request.headers), raw, event)
     fresh = webhook_handlers.record(event, ok, method, note)
     if not ok:
