@@ -108,6 +108,16 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
+# Indexes for the hot reads: public stats and decks by bill status, the scan limit by poster, sponsor pages by
+# sponsor, payouts by bill. IF NOT EXISTS, so an existing database gains them on its next start.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS ix_bills_status ON bills(status);
+CREATE INDEX IF NOT EXISTS ix_bills_poster_created ON bills(poster_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_contrib_sponsor ON contributions(sponsor_id, status);
+CREATE INDEX IF NOT EXISTS ix_payout_bill ON payout_items(bill_id);
+CREATE INDEX IF NOT EXISTS ix_events_public ON events(public, id);
+"""
+
 # Columns added after the first release. connect() adds any that an existing database is missing.
 MIGRATIONS = [
     ("payout_items", "sender_batch_id", "TEXT DEFAULT ''"),
@@ -128,9 +138,12 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL" if path != ":memory:" else "PRAGMA journal_mode=MEMORY")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    if path != ":memory:":
+        conn.execute("PRAGMA synchronous=NORMAL")  # safe with WAL: a power cut can lose the last commit, not corrupt
     for table, column, decl in MIGRATIONS:
         if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.executescript(INDEXES)
     _conn = conn
     return conn
 
