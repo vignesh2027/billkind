@@ -1,3 +1,5 @@
+<img src="app/web/static/logo-512.png" alt="Billkind logo: a bill with a check cut into it on a navy to cyan tile" width="76">
+
 # Billkind
 
 **Post a bill you cannot pay. A stranger pays it. The money goes to the biller, never to the person.**
@@ -13,12 +15,30 @@ Built for the PayPal AI Hackathon 2026. Sandbox only: no real money moves.
 | Video music | Music: "Light Thought var 1" Kevin MacLeod (incompetech.com)<br>Licensed under Creative Commons: By Attribution 4.0 License<br>http://creativecommons.org/licenses/by/4.0/ |
 | License | MIT |
 
+## Drop a bill
+
+<img src="docs/screenshots/drop-a-bill.gif" alt="Drop a bill: a sample electricity bill is dropped on the drop zone, a scanning beam reads it, and the form fills in with a confidence level on every field" width="860">
+
+**Drag. Drop. Done.** A person drops a photo or PDF of a real bill (or takes a photo on a phone). Billkind reads it with an open vision model and fills in the form: biller, amount and currency, due date, kind of bill, account or reference number, service period and service address. Every field shows a confidence level worked out in code, not taken from the model on its own:
+
+| Level | When |
+|---|---|
+| High | Two independent readings agree (the vision model and Tesseract OCR), or the biller matches the verified registry |
+| Check | Read once and nothing contradicts it |
+| Fix | Missing, the two readings disagree, or the value breaks a bill rule: a currency Billkind cannot settle, an amount above the open-bill limit or far from a typical bill of that kind, a due date months away or long past |
+
+Every field stays editable and nothing is posted until the person confirms; then the same nine safety checks run. No bill handy? Drag one of four fictional sample bills (electricity, school fees, water, clinic) onto the drop zone, or press **Try a sample bill**. Each sample is generated fresh on every request, so it never trips the duplicate checks.
+
+Privacy and safety: files are checked by their bytes (JPEG, PNG, WebP or PDF only, up to 8 MB, PDFs up to 4 pages). The private copy kept for reviewers is re-encoded without EXIF or GPS, and PDFs are rewritten with their pages only, without document metadata. The stored reading keeps only the last four characters of the account number; the full number lives in one private column and goes only to the biller in the payout note. The original file is never on a public page. Readings are capped at eight per poster in ten minutes, and the vision model gets a downscaled copy, one model call at a time, to stay inside Groq's free-tier tokens per minute; if it is rate limited, a text model reads the OCR text, and without any AI the regex reading still fills the form. Code: [app/ai/dropbill.py](app/ai/dropbill.py), [app/ai/intake.py](app/ai/intake.py).
+
+What it gives the rest of the app: sponsor cards show **Read from the bill** when both readings of the uploaded document agreed on the amount, and the giving agent receives each candidate bill's verified biller, due date and what its document confirms, and is told to prefer document-confirmed bills when others are alike. Its hard caps are unchanged and still live in code.
+
 | | |
 |---|---|
-| <img src="docs/screenshots/after/05-deck-1440.png" alt="Sponsor deck: a verified electricity bill from Lagos with the money path you, PayPal, the biller" width="420"> | <img src="docs/screenshots/after/07-paid-sheet-1440.png" alt="Payment sheet after paying: PayPal capture, bill funded, payout sent, biller confirmed and the PAID stamp" width="420"> |
-| **Swipe deck.** Verified bills, most urgent first, paid straight to the biller. | **Follow your money.** Capture, payout to the biller and the PAID stamp, live. |
-| <img src="docs/screenshots/after/11-agent-1440.png" alt="Giving agent: limits enforced in code and a decision log with paid, clamped, skipped and blocked entries" width="420"> | <img src="docs/screenshots/15-impact-studio.png" alt="Impact studio built with AG Studio: totals, the money path widget and giving by country and kind of bill" width="420"> |
-| **Giving agent.** Plain-words rules become hard limits; every decision is logged. | **Impact studio.** AG Studio dashboard of what the sponsor's money did. |
+| <img src="docs/screenshots/v2/hero-1440.png" alt="Landing page with the 3D hero: a bill stamped PAID while the giving agent routes the payment from the sponsor to the biller" width="420"> | <img src="docs/screenshots/v2/deck-1440.png" alt="Sponsor deck: a verified water bill from Nairobi with the money path you, PayPal, the biller" width="420"> |
+| **Landing page.** A small 3D scene: the giving agent carries the payment, the bill is stamped PAID, the biller is paid. | **Swipe deck.** Verified bills, most urgent first, paid straight to the biller. |
+| <img src="docs/screenshots/v2/agent-1440.png" alt="Giving agent: limits enforced in code and a decision log with paid, clamped, skipped and blocked entries" width="420"> | <img src="docs/screenshots/v2/drop-done-1440.png" alt="Check what we read: every field pre-filled with High, Check or Fix and the reason" width="420"> |
+| **Giving agent.** Plain-words rules become hard limits; every decision is logged. | **Check what we read.** Each field with its confidence and the reason. |
 
 ## Try it in two minutes
 
@@ -28,7 +48,7 @@ Open the live demo, choose **Sign in**, and use the one-click demo accounts. No 
 |---|---|
 | Sponsor (`sponsor@billkind.demo`) | **Bills**: swipe right (or press the right arrow) on a bill, pay, and watch the steps tick through to PAID. **My giving** shows every payment with its PayPal order, capture and payout IDs. **Impact studio** turns it into an AG Studio dashboard; ask the assistant for a new view. |
 | Big sponsor (`bigsponsor@billkind.demo`) | **Big-sponsor mode**: type "Clear every school fee bill under 60 USD" and pay them all in one checkout. **Giving agent**: its PayPal is already saved and its rules are set, so press **Run now** and read the decision log. The budget is per calendar month across all of this sponsor's agent payments. So that every judge can try it, this demo account gets a fresh budget once it is used up (at most every 15 minutes); the renewal shows in the decision log as its own entry. You can also write new rules with a higher monthly budget (up to 5,000 USD), confirm, and run again. Earlier payments and decisions are never changed. |
-| Poster (`poster@billkind.demo`) | **Post a bill**: download a fresh sample bill from the same page, upload it, check what the AI read, add a few words, and post. Each browser gets its own poster account. |
+| Poster (`poster@billkind.demo`) | **Post a bill**: drag a sample bill onto the drop zone (or press **Try a sample bill**, or drop your own photo or PDF), watch it fill in, check each field, add a few words, and post. Each browser gets its own poster account. |
 | Admin (`admin@billkind.demo`) | Review queue with risk reasons and the original document, biller registry, payout problems, support tickets, the webhook log and the PayPal and AI call logs. The Operations studio (AG Studio) is linked from the console. |
 | Biller (`biller@billkind.demo`) | Payouts received, with the customer account number from each payout note. |
 
@@ -43,7 +63,7 @@ Payments run in the real PayPal sandbox. When the PayPal window opens, log in wi
 
 Billers are paid into a sandbox business account (`billkind-biller@business.example.com`) that stands in for every demo biller. Without credentials (for example a fresh local clone), Billkind falls back to its built-in PayPal fake, where a neutral "sandbox payment simulator" window stands in for the PayPal login.
 
-Suggested path for judges: sign in as Poster in one browser window and post the fresh sample bill. Sign in as Sponsor in a private window, swipe right on that bill and pay. Watch the PAID stamp appear in both windows, then send a thank-you as the poster and watch it reach the sponsor.
+Suggested path for judges: sign in as Poster in one browser window and drop a sample bill (the electricity bill from Detroit is paid and paid out in USD). Sign in as Sponsor in a private window, swipe right on that bill and pay. Watch the PAID stamp appear in both windows, then send a thank-you as the poster and watch it reach the sponsor.
 
 ### Proof it ran in the real PayPal sandbox
 
@@ -76,7 +96,7 @@ The core rule removes the incentive: **money only moves to a verified biller's P
 
 On top of that, every bill passes nine checks before it can be paid: verified biller registry, editing-software traces in the file, visual editing signs, two independent readings of the amount and date (a vision model and OCR), line items adding up, a typical amount for the kind of bill, a sensible due date, duplicates (same file, near-identical image with the same amount, same account and amount), and posting velocity per account and device. The result is a 0 to 100 risk score with every reason in plain words. Low-risk bills list automatically, others go to a person, and hard failures such as an already-paid bill are refused with the reason shown. Code: [app/ai/fraud.py](app/ai/fraud.py).
 
-Account numbers are masked to the last four characters, and names, phone numbers, emails and addresses are removed before anything is public ([app/ai/redact.py](app/ai/redact.py)). The full account number is sent only to the biller, inside the payout note.
+Account numbers are masked to the last four characters, and names, phone numbers, emails and addresses are removed before anything is public ([app/ai/redact.py](app/ai/redact.py)). The full account number is sent only to the biller, inside the payout note. Uploaded photos lose their EXIF and GPS data and PDFs their metadata before they are stored, and the original file is visible only to reviewers.
 
 ## PayPal APIs used
 
@@ -123,8 +143,8 @@ All models are open-weight models served by Groq. Every AI feature has a non-AI 
 
 | Feature | Model | Fallback |
 |---|---|---|
-| Reading a bill photo into structured fields | `qwen/qwen3.8-27b` (vision), with `openai/gpt-oss-120b` reading the OCR text in parallel | Tesseract OCR and a regex parser |
-| Reading a PDF bill | `openai/gpt-oss-120b` on the PDF text | Regex parser |
+| Drop a bill: reading a photo into structured fields with a confidence per field | `qwen/qwen3.8-27b` (vision, JSON output); if it is unavailable or rate limited, `openai/gpt-oss-120b` reads the OCR text | Tesseract OCR and a regex parser; confidence comes from comparing the two readings in code |
+| Reading a PDF bill | `openai/gpt-oss-120b` on the PDF text; a scanned PDF's page image goes to the vision model | Regex parser |
 | Visual editing signs (one of the nine checks) | Vision model | Rule checks only |
 | Dignified note from the poster's own words, with consent | `openai/gpt-oss-120b` | Template; redaction runs on both |
 | Big-sponsor filter from plain words | `openai/gpt-oss-120b` | Keyword parser |
@@ -179,7 +199,7 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 .venv/bin/python -m pytest -q
 ```
 
-67 tests run in about ten seconds against a real HTTP server and the PayPal fake (66 run by default; the 67th is the opt-in contract test against the real sandbox, described below). They cover money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, the demo upkeep (re-listed bills and budget renewal, never outside the sandbox), monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
+84 tests run in about fifteen seconds against a real HTTP server and the PayPal fake (83 run by default; the 84th is the opt-in contract test against the real sandbox, described below). They cover drop a bill (file type and size checks, the PDF page cap, EXIF, GPS and PDF metadata removed from stored copies, parsing and cleaning the model's output, validation against the bill rules, confidence from two readings and the registry, account redaction, the scan endpoint with the model mocked through to a listed bill, refusals, the per-poster limit, the no-AI fallback, fresh samples, and what the giving agent sees), money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, the demo upkeep (re-listed bills and budget renewal, never outside the sandbox), monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
 
 ### Deploy
 
@@ -194,9 +214,11 @@ app/
   main.py            routes and pages
   paypal/            client (SDK and REST), webhook verification, Agent Toolkit wrapper, local PayPal fake
   core/              state machines, funding and payouts, posting, billers, events (SSE), automation, jobs
-  ai/                intake, fraud, redaction, notes, matching, bulk filter, giving agent, support assistant
-  web/               Jinja templates, CSS, the small pay.js helper
-scripts/             seed data and sample bills
+  ai/                intake, drop a bill (confidence and validation), fraud, redaction, notes, matching,
+                     bulk filter, giving agent, support assistant
+  web/               Jinja templates, CSS, pay.js, the 3D landing hero (hero3d.js, three.js r160 vendored)
+scripts/             seed data and the sample bill generator
+samples/             fictional sample bills
 tests/               unit, integration and contract tests
 DESIGN.md            problem, audience, safety model, state machines, path to production
 ```

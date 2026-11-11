@@ -1176,3 +1176,8 @@ body:not(.app) .page-head { background: var(--surface); }
 @media (max-width: 560px) { .hero3d { height: 340px; margin-inline: -16px; } .hero3d .float-chip { display: none; } }
 .chip.doc { background: linear-gradient(135deg, #E6F0FF, #E2F8FE); color: var(--primary-hover); }
 .chip .ico { width: 14px; height: 14px; }
+/* Map: paid bills glow cyan and solid; open bills are hollow vivid-blue rings. */
+.legend-dot.paid { background: #22C7F2; box-shadow: 0 0 8px rgba(34, 199, 242, .8); }
+.legend-dot.open { background: transparent; border: 2px solid #5B8CFF; }
+.map circle.open { fill: rgba(91, 140, 255, .14); stroke: #5B8CFF; stroke-width: 1.5; }
+.map circle.paid { fill: #22C7F2; stroke: #E2F8FE; stroke-width: 1.5; filter: drop-shadow(0 0 6px rgba(34, 199, 242, .8)); }

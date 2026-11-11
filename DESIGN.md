@@ -35,7 +35,7 @@ The pattern: a campaign needs a compelling story, a large network and the giver'
 
 ## 3. The experience
 
-1. **Post a bill.** Photo or PDF. The AI reads it, fills in biller, amount, currency, due date and account reference, checks it for fraud, masks personal data, and helps the poster write a short, dignified note with their consent.
+1. **Drop a bill.** Drag a photo or PDF onto the drop zone (or take a photo on a phone). While a scanning beam passes over the thumbnail, the AI reads it and fills in biller, amount, currency, due date, kind of bill, account reference, service period and service address. Each field shows a confidence level that code works out from two independent readings (vision model and OCR), the verified biller registry and the bill rules; every field stays editable and nothing is posted until the poster confirms. Then the bill is checked for fraud, personal data is masked, and the poster can add a short note that is rewritten with their consent.
 2. **Swipe.** Sponsors see a deck of verified bill cards from around the world: category, city and country, amount in the bill's currency and in theirs, days to the due date, the AI-written note, and a plain verification badge. Swipe right (or press the right arrow, or the Pay button) to pay all or part. Swipe left to pass.
 3. **Pay.** PayPal checkout in the bill's settlement currency. Several sponsors can pool partial payments into one bill.
 4. **Biller paid.** When a bill is fully funded, Billkind sends one PayPal payout to the biller's verified account with the account reference in the payout note. When PayPal confirms the payout, the card gets a PAID stamp.
@@ -72,7 +72,7 @@ AI is used where it helps a human decide, never as the only gate on money: the d
 
 | Feature | Model | Fallback without AI |
 |---|---|---|
-| Bill intake from photo | `qwen/qwen3.8-27b` vision on Groq returns structured JSON | Tesseract OCR plus regex parser |
+| Bill intake from photo (drop a bill) | `qwen/qwen3.8-27b` vision on Groq returns structured JSON with its own per-field confidence; on a rate limit `openai/gpt-oss-120b` reads the OCR text | Tesseract OCR plus regex parser |
 | Bill intake from PDF | `pypdf` text, then `openai/gpt-oss-120b` structured extraction | Regex parser |
 | Fraud signals and plain reasons | Rules plus the model's consistency review | Rules only |
 | Privacy redaction | Regex masking, then a model pass for names and addresses | Regex only |
@@ -151,7 +151,7 @@ Overfunding: before an order is created, the server reserves the remaining amoun
 1. The sponsor writes rules in plain words.
 2. The model turns them into a policy: monthly budget, per-bill cap, categories, countries, maximum risk, minimum days to due date. The sponsor sees and confirms the structured version.
 3. The sponsor vaults their PayPal once (Vault v3).
-4. On each run, code selects candidates that already satisfy the policy. The model ranks them and proposes amounts with a one-line reason each.
+4. On each run, code selects candidates that already satisfy the policy. The model ranks them and proposes amounts with a one-line reason each. Each candidate carries its verified biller, due date and what the uploaded document confirmed (for example "amount and due date confirmed by two readings of the bill"), so the model can prefer bills the document backs up; it is told not to claim anything the candidate data does not say.
 5. Code clamps every proposal: per-bill cap, remaining monthly budget, remaining bill amount. A proposal that breaks a rule is not paid, and the log says which rule stopped it.
 6. Payments use Orders v2 with the vaulted PayPal (no buyer present), and flow through the same funding and payout path as a manual swipe.
 
