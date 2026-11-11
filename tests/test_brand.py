@@ -82,3 +82,11 @@ def test_fonts_are_self_hosted_with_their_licences():
     assert "fonts.googleapis.com" not in html and "fonts.gstatic.com" not in css
     assert '<link rel="preload" href="/static/fonts/inter-latin.woff2"' in html
     assert ".stat-value {" in css and "tabular-nums" in css.split(".stat-value {", 1)[1].split("}", 1)[0]
+
+
+def test_self_hosted_fonts_are_served_as_woff2():
+    for name in ("bricolage-grotesque-latin", "bricolage-grotesque-currency", "inter-latin", "inter-currency",
+                 "manrope-latin"):
+        r = httpx.get(BASE + f"/static/fonts/{name}.woff2")
+        assert r.status_code == 200 and r.headers["content-type"] == "font/woff2"
+        assert r.content[:4] == b"wOF2"
