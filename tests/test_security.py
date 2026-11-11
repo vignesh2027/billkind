@@ -9,8 +9,10 @@ from app.config import settings
 from tests.conftest import BASE, login
 
 
-def _client() -> httpx.Client:
-    return httpx.Client(base_url=BASE, follow_redirects=False, timeout=30)
+def _client(ip: str | None = None) -> httpx.Client:
+    """A browser. With ip, it arrives through the proxy from that address (the tests reach the app on loopback)."""
+    return httpx.Client(base_url=BASE, follow_redirects=False, timeout=30,
+                        headers={"X-Forwarded-For": ip} if ip else None)
 
 
 def _signed_in_as(c: httpx.Client) -> str | None:
@@ -223,10 +225,13 @@ def test_demo_poster_accounts_from_one_address_are_capped(monkeypatch):
     monkeypatch.setattr(limits.DEMO_POSTERS, "limit", 2)
     ids = set()
     for _ in range(4):
-        c = _client()
+        c = _client("203.0.113.7")
         c.post("/login", data={"email": "poster@billkind.demo", "demo": "1"})
         ids.add(c.cookies.get("bk_demo_poster"))
     assert len(ids) == 2  # the third and fourth logins reuse the latest account from this address
+    c = _client("203.0.113.8")
+    c.post("/login", data={"email": "poster@billkind.demo", "demo": "1"})
+    assert c.cookies.get("bk_demo_poster") not in ids  # another address is not affected
 
 
 def test_repeated_wrong_passwords_are_cut_off(monkeypatch):
@@ -234,7 +239,7 @@ def test_repeated_wrong_passwords_are_cut_off(monkeypatch):
     from tests.conftest import TEST_PASSWORD, login
     login("poster02@billkind.demo")  # gives the account a known private password
     monkeypatch.setattr(limits.LOGIN_FAILURES, "limit", 3)
-    c = _client()
+    c = _client("203.0.113.9")
     for _ in range(3):
         c.post("/login", data={"email": "poster02@billkind.demo", "password": "wrong"})
     r = c.post("/login", data={"email": "poster02@billkind.demo", "password": TEST_PASSWORD})
@@ -322,9 +327,10 @@ def test_sample_bill_rendering_is_bounded(monkeypatch):
     assert peak[0] <= main.SAMPLE_RENDERS
     monkeypatch.setattr(limits.SAMPLES, "limit", 1)
     limits.SAMPLES.reset()
-    c = _client()
+    c = _client("203.0.113.10")
     assert c.get("/samples/fresh/water.jpg").status_code == 200
     assert c.get("/samples/fresh/water.jpg").status_code == 429
+    assert _client().get("/samples/fresh/water.jpg").status_code == 200  # no known address: no per-address limit
 
 
 def test_paypal_call_log_keeps_only_recent_calls():
@@ -333,3 +339,20 @@ def test_paypal_call_log_keeps_only_recent_calls():
     for i in range(500):
         pc.calls.append(("GET", f"/x/{i}", 200))
     assert len(pc.calls) == 200 and pc.calls[-1][1] == "/x/499"
+
+
+def test_live_stream_connections_are_capped_per_address(monkeypatch):
+    from app.core import events
+    monkeypatch.setattr(events.Broker, "MAX_PER_CLIENT", 2)
+    held = [events.broker.subscribe(None, "203.0.113.11") for _ in range(2)]
+    try:
+        r = _client("203.0.113.11").get("/events/stream")
+        assert r.status_code == 503 and r.headers["retry-after"] == "30"
+    finally:
+        for q in held:
+            events.broker.unsubscribe(q)
+
+
+def test_hot_queries_have_indexes():
+    names = {r["name"] for r in db.q("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    assert {"ix_bills_status", "ix_bills_poster_created", "ix_contrib_sponsor", "ix_payout_bill"} <= names

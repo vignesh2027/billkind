@@ -145,7 +145,10 @@ async def live_stats():
 @app.get("/events/stream")
 async def stream(request: Request):
     user = auth.current_user(request)
-    q = events.broker.subscribe(user["id"] if user else None)
+    try:
+        q = events.broker.subscribe(user["id"] if user else None, limits.client_ip(request))
+    except events.TooManyStreams:
+        return JSONResponse({"error": "Too many live connections."}, status_code=503, headers={"Retry-After": "30"})
 
     async def gen():
         try:

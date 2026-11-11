@@ -2,7 +2,9 @@
 
 Keys are user ids where a user is signed in, and the client address otherwise. Behind Caddy the address uvicorn
 sees is the proxy's, so a private or loopback peer is trusted for X-Forwarded-For (the right-most entry, the one
-the proxy itself added); a public peer is used as is and its header ignored.
+the proxy itself added); a public peer is used as is and its header ignored. A private peer with no forwarded
+address gives no key at all, and per-address limits then do not apply: that keeps a proxy that drops the header
+from turning every per-address limit into one shared by all visitors.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ class Window:
 
     def allow(self, key: str, now: float | None = None) -> bool:
         """Record a hit and say whether it is within the limit (hits over the limit are not recorded)."""
+        if not key:
+            return True
         now = now or time.time()
         if len(self.hits) > self.MAX_KEYS:
             self.hits = {k: q for k, q in self.hits.items() if q and q[-1] > now - self.seconds}
@@ -42,6 +46,8 @@ class Window:
 
     def over(self, key: str, now: float | None = None) -> bool:
         """Whether the key is at its limit, without recording a hit."""
+        if not key:
+            return False
         return len(self._recent(key, now or time.time())) >= self.limit
 
     def reset(self) -> None:
@@ -56,8 +62,7 @@ def client_ip(request: Request) -> str:
         private = False
     if private:
         fwd = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
-        if fwd:
-            return fwd[-1]
+        return fwd[-1] if fwd else ""
     return peer
 
 
