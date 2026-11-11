@@ -170,23 +170,43 @@ DEMO_ACCOUNTS = [
     ("biller@billkind.demo", "Biller", "See payouts arrive"),
     ("admin@billkind.demo", "Admin", "Review queue, billers, webhooks"),
 ]
+# The shared accounts that hold other people's data: one-click only when DEMO_ADMIN_LOGIN is on.
+PRIVILEGED_DEMO = {"admin@billkind.demo", "biller@billkind.demo"}
+
+
+def demo_accounts() -> list[tuple[str, str, str]]:
+    """The one-click accounts offered (and accepted) right now. Empty outside the sandbox and the local fake."""
+    if not automation.demo_mode():
+        return []
+    return [a for a in DEMO_ACCOUNTS if settings.demo_admin_login or a[0] not in PRIVILEGED_DEMO]
+
+
+def _public_password_refused(user: dict, password: str) -> bool:
+    """The seeded demo password is published in the repository. It may open the shared demo accounts only, never
+    the admin, the biller or a tester's own poster account."""
+    from scripts.seed import DEMO_PASSWORD
+    return password == DEMO_PASSWORD and user["email"] not in {a[0] for a in demo_accounts()}
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = "/"):
-    return render(request, "login.html", next=next, demo=DEMO_ACCOUNTS, error="")
+    return render(request, "login.html", next=next, demo=demo_accounts(), error="")
 
 
 @app.post("/login")
 async def login(request: Request, email: str = Form(...), password: str = Form(""), next: str = Form("/"),
                 demo: str = Form("")):
-    user = db.one("SELECT * FROM users WHERE email = ?", (email.strip().lower(),))
-    ok = user and (auth.check_password(password, user["password_hash"]) or
-                   (demo == "1" and email.endswith("@billkind.demo")))
+    email = email.strip().lower()
+    user = db.one("SELECT * FROM users WHERE email = ?", (email,))
+    # One-click demo sign-in is an exact match against the offered list, checked before any hashing. The password
+    # check runs off the event loop: scrypt takes tens of milliseconds and would stall every other request.
+    is_demo = demo == "1" and email in {a[0] for a in demo_accounts()}
+    ok = bool(user) and (is_demo or (not _public_password_refused(user, password) and
+                                     await asyncio.to_thread(auth.check_password, password, user["password_hash"])))
     if not ok:
-        return render(request, "login.html", next=next, demo=DEMO_ACCOUNTS, error="Email or password is not right.")
+        return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
     resp_cookie = None
-    if demo == "1" and user["email"] == "poster@billkind.demo":
+    if is_demo and user["email"] == "poster@billkind.demo":
         # Each browser gets its own demo poster account, so testers do not trip each other's velocity limits.
         own = request.cookies.get("bk_demo_poster", "")
         mine = db.one("SELECT * FROM users WHERE id = ? AND role = 'poster'", (own,)) if own else None

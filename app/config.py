@@ -53,6 +53,9 @@ class Settings:
     # Hosted demo upkeep (app/core/automation.py): re-list fictional demo bills and renew the demo big sponsor's
     # agent budget. Only ever acts with PAYPAL_MODE fake or sandbox.
     demo_self_heal: bool = field(default_factory=lambda: _env("DEMO_SELF_HEAL", "1") == "1")
+    # One-click sign-in to the shared demo Admin and Biller accounts. Off unless set, so a production deploy never
+    # hands out the admin console; the hosted judging demo sets DEMO_ADMIN_LOGIN=1.
+    demo_admin_login: bool = field(default_factory=lambda: _env("DEMO_ADMIN_LOGIN", "0") == "1")
     fake_payout_delay: float = field(default_factory=lambda: float(_env("FAKE_PAYOUT_DELAY", "2.5")))
 
     @property
