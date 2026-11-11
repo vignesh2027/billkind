@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SANDBOX_API = "https://api-m.sandbox.paypal.com"
 PAYPAL_MODES = ("fake", "sandbox")
+WEAK_SECRETS = {"change-me", "changeme", "secret", "test"}
 
 
 def _load_dotenv(path: Path) -> None:
@@ -61,6 +63,13 @@ class Settings:
     fake_payout_delay: float = field(default_factory=lambda: float(_env("FAKE_PAYOUT_DELAY", "2.5")))
 
     def __post_init__(self) -> None:
+        # Sessions are signed, not encrypted: anyone who knows the key can sign in as any account. A placeholder or
+        # short key is replaced with a random one (sessions then reset on restart), and the variable is named, never
+        # its value.
+        if self.session_secret in WEAK_SECRETS or len(self.session_secret) < 32:
+            logging.getLogger("billkind").warning("SESSION_SECRET is missing, a placeholder or shorter than 32 "
+                                                  "characters; using a random key for this run instead")
+            self.session_secret = secrets.token_hex(32)
         has_credentials = bool(self.paypal_client_id and self.paypal_client_secret)
         if not self.paypal_mode:
             self.paypal_mode = "sandbox" if has_credentials else "fake"

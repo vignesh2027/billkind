@@ -356,3 +356,13 @@ def test_live_stream_connections_are_capped_per_address(monkeypatch):
 def test_hot_queries_have_indexes():
     names = {r["name"] for r in db.q("SELECT name FROM sqlite_master WHERE type = 'index'")}
     assert {"ix_bills_status", "ix_bills_poster_created", "ix_contrib_sponsor", "ix_payout_bill"} <= names
+
+
+def test_placeholder_or_short_session_secret_is_never_used(monkeypatch):
+    from app.config import Settings
+    for weak in ("change-me", "short", ""):
+        monkeypatch.setenv("SESSION_SECRET", weak)
+        key = Settings().session_secret
+        assert key != weak and len(key) >= 32
+    monkeypatch.setenv("SESSION_SECRET", "k" * 40)
+    assert Settings().session_secret == "k" * 40
