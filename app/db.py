@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS payout_items (
   sender_item_id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, payout_item_id TEXT DEFAULT '',
   bill_id TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL,
   receiver TEXT NOT NULL, status TEXT NOT NULL, transaction_id TEXT DEFAULT '',
-  created_at REAL NOT NULL, updated_at REAL NOT NULL
+  created_at REAL NOT NULL, updated_at REAL NOT NULL, sender_batch_id TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS payout_batches (
   batch_id TEXT PRIMARY KEY, sender_batch_id TEXT NOT NULL, status TEXT NOT NULL,
@@ -108,6 +108,11 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
+# Columns added after the first release. connect() adds any that an existing database is missing.
+MIGRATIONS = [
+    ("payout_items", "sender_batch_id", "TEXT DEFAULT ''"),
+]
+
 _conn: sqlite3.Connection | None = None
 _lock = threading.RLock()
 
@@ -122,6 +127,9 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL" if path != ":memory:" else "PRAGMA journal_mode=MEMORY")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    for table, column, decl in MIGRATIONS:
+        if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     _conn = conn
     return conn
 

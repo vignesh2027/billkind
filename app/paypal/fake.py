@@ -7,6 +7,7 @@ certificate, so the self-verification path is exercised end to end.
 
 Test hooks:
   payer email containing "decline"      capture returns status DECLINED
+  payer email containing "pending"      capture returns status PENDING (held for review)
   payout receiver containing "unclaimed" payout item ends UNCLAIMED (also "returned", "blocked", "failed")
 """
 
@@ -218,7 +219,7 @@ def _make_capture(order: dict, unit: dict, payer_email: str) -> dict:
     gross = Decimal(amount["value"])
     zero = amount["currency_code"] in ZERO_DECIMAL
     fee = (gross * Decimal("0.0349") + Decimal("0.49")).quantize(Decimal("1") if zero else Decimal("0.01"))
-    status = "DECLINED" if "decline" in payer_email else "COMPLETED"
+    status = "DECLINED" if "decline" in payer_email else "PENDING" if "pending" in payer_email else "COMPLETED"
     cap = {
         "id": cid,
         "status": status,
@@ -241,6 +242,8 @@ def _make_capture(order: dict, unit: dict, payer_email: str) -> dict:
         "update_time": _now_iso(),
         "_refunded": "0",
     }
+    if status == "PENDING":
+        cap["status_details"] = {"reason": "PENDING_REVIEW"}
     CAPTURES[cid] = cap
     return cap
 
@@ -356,6 +359,8 @@ async def capture_order(oid: str, request: Request):
         if cap["status"] == "COMPLETED":
             emit("PAYMENT.CAPTURE.COMPLETED", "capture", _public(cap),
                  f"Payment completed for {cap['amount']['value']} {cap['amount']['currency_code']}")
+        elif cap["status"] == "PENDING":
+            emit("PAYMENT.CAPTURE.PENDING", "capture", _public(cap), "Payment pending")
         else:
             declined = True
             emit("PAYMENT.CAPTURE.DECLINED", "capture", _public(cap), "A payment capture was declined")
@@ -496,6 +501,8 @@ _OUTCOMES = {"unclaimed": ("UNCLAIMED", "PAYMENT.PAYOUTS-ITEM.UNCLAIMED"),
 async def create_payout(request: Request):
     if not _auth_ok(request):
         return JSONResponse(status_code=401, content={"name": "AUTHENTICATION_FAILURE"})
+    if (r := _replay(request)) is not None:
+        return r
     body = await request.json()
     header = body.get("sender_batch_header") or {}
     sbid = header.get("sender_batch_id")
@@ -532,7 +539,7 @@ async def create_payout(request: Request):
         })
     BATCHES[bid] = batch
     _spawn(_process_batch(bid))
-    return JSONResponse(status_code=201, content={
+    return _idem(request, 201, {
         "batch_header": {"payout_batch_id": bid, "batch_status": "PENDING",
                          "sender_batch_header": {"sender_batch_id": sbid, "email_subject": header.get("email_subject", "")}},
         "links": [{"href": f"{settings.paypal_base_url}/v1/payments/payouts/{bid}", "rel": "self", "method": "GET",
@@ -557,6 +564,24 @@ async def _process_batch(bid: str) -> None:
     batch["batch_header"]["batch_status"] = "SUCCESS"
     emit("PAYMENT.PAYOUTSBATCH.SUCCESS", "payouts", {"batch_header": batch["batch_header"]},
          "Payouts batch completed successfully.")
+
+
+@router.post("/v1/payments/payouts-item/{item_id}/cancel")
+async def cancel_payout_item(item_id: str, request: Request):
+    if not _auth_ok(request):
+        return JSONResponse(status_code=401, content={"name": "AUTHENTICATION_FAILURE"})
+    for batch in BATCHES.values():
+        for item in batch["items"]:
+            if item["payout_item_id"] != item_id:
+                continue
+            if item["transaction_status"] != "UNCLAIMED":
+                return _err(422, "UNPROCESSABLE_ENTITY", "ITEM_NOT_CANCELLABLE",
+                            "Only unclaimed payout items can be cancelled.")
+            item["transaction_status"] = "RETURNED"
+            item["time_processed"] = _now_iso()
+            emit("PAYMENT.PAYOUTS-ITEM.CANCELED", "payouts_item", dict(item), "Payout item canceled")
+            return dict(item)
+    return _err(404, "RESOURCE_NOT_FOUND", "INVALID_RESOURCE_ID")
 
 
 @router.get("/v1/payments/payouts/{bid}")

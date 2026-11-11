@@ -212,8 +212,12 @@ class PayPalClient:
     # Payouts v1 ----------------------------------------------------------------
 
     async def create_payout(self, *, sender_batch_id: str, items: list[dict], subject: str,
-                            message: str) -> dict:
-        """items: [{'receiver','value','currency','note','sender_item_id'}]"""
+                            message: str, request_id: str | None = None) -> dict:
+        """items: [{'receiver','value','currency','note','sender_item_id'}]
+
+        Resending the same sender_batch_id (and PayPal-Request-Id) never creates a second batch: PayPal either replays
+        the first response or refuses the duplicate.
+        """
         body = {
             "sender_batch_header": {
                 "sender_batch_id": sender_batch_id,
@@ -232,7 +236,13 @@ class PayPalClient:
                 for it in items
             ],
         }
-        return await self._req("POST", "/v1/payments/payouts", "create payout", body, prefer=False)
+        return await self._req("POST", "/v1/payments/payouts", "create payout", body, prefer=False,
+                               request_id=request_id)
+
+    async def cancel_payout_item(self, payout_item_id: str) -> dict:
+        """Cancel an UNCLAIMED payout item; PayPal returns the item, now RETURNED to the sender."""
+        return await self._req("POST", f"/v1/payments/payouts-item/{payout_item_id}/cancel", "cancel payout item",
+                               {}, prefer=False)
 
     async def get_payout_batch(self, batch_id: str) -> dict:
         return await self._req("GET", f"/v1/payments/payouts/{batch_id}", "get payout batch",

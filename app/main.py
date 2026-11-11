@@ -383,6 +383,9 @@ async def poster_withdraw(request: Request, bill_id: str, csrf: str = Form("")):
         await funding.withdraw(bill_id, "You withdrew this bill.")
     except (funding.FundingError, states.IllegalTransition) as exc:
         notify.send(user["id"], "notice", "Could not withdraw", str(exc), bill_id=bill_id)
+    except PayPalError:  # refunds already made stay made; withdrawing again finishes the rest
+        notify.send(user["id"], "notice", "Could not withdraw",
+                    "PayPal could not finish every refund. Please try again.", bill_id=bill_id)
     return RedirectResponse(f"/me#{bill_id}", status_code=303)
 
 

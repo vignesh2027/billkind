@@ -166,12 +166,14 @@
     if (!r.ok) { showError(data.error || 'Could not start the payment.'); throw new Error(data.error); }
     return data;
   }
+  const PENDING_MSG = 'PayPal is still confirming this payment. It counts toward the bill once PayPal completes it.';
   async function capture(orderID) {
     let data = null;
     try {
       const r = await post('/api/orders/' + orderID + '/capture');
       data = await r.json().catch(() => null);
       if (r.ok && data && data.status === 'COMPLETED') { done(data); return; }
+      if (r.ok && data && data.status === 'PENDING') { showError(PENDING_MSG); return; }
       if (r.ok && data && data.status) { showError('PayPal reported ' + data.status + '. You were not charged.'); return; }
     } catch (e) { data = null; }
     // Not confirmed: a webhook may already have captured it, so check before showing an error.
