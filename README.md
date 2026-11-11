@@ -67,7 +67,7 @@ Suggested path for judges: sign in as Poster in one browser window and drop a sa
 
 ### Proof it ran in the real PayPal sandbox
 
-These payments were made on the hosted demo while recording the video, with the sandbox buyers above. The IDs are PayPal sandbox IDs (play money). Six captured orders touched eight bills, sent six payouts to the sandbox biller account and made one full refund.
+These payments were made on the hosted demo with the sandbox buyers above; the first six while recording the video, the last one after drop a bill shipped. The IDs are PayPal sandbox IDs (play money). Seven captured orders touched nine bills, sent seven payouts to the sandbox biller account and made one full refund.
 
 | What | Amount | PayPal order | Capture | Payout items to the biller |
 |---|---|---|---|---|
@@ -77,6 +77,7 @@ These payments were made on the hosted demo while recording the video, with the 
 | Giving agent, Vault payment, BK-S003 (medical, Lagos) | 37.58 USD | `9CD57971W9445682L` | `8B386022102406219` | `WR42EUWRYBC48` |
 | Giving agent, Vault payment, BK-S004 (medical, Quezon City), clamped to the 35.52 USD left in its budget | 2,042.40 PHP | `6JT20207YC995343B` | `51X60438WV981014G` | none yet: the bill was 49% funded and stayed open |
 | Sponsor chips in on bill BK-YA7LD, then the poster withdraws the bill | 10.00 USD, refunded in full | `3P972633RA982833G` | `3964210366728263B` | none: refunded through Payments v2 |
+| Poster drops the sample electricity bill (all six main fields read with high confidence), sponsor pays bill BK-MMM5M | 67.61 USD | `88N93106MM031922A` | `0M7079577M484362G` | `Y5JRP93KJDQ46` |
 
 ## Why it matters
 
