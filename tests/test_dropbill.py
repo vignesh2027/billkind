@@ -234,8 +234,10 @@ def test_scan_prefills_and_confirm_posts_with_private_account(monkeypatch):
     stored = Path(bill["doc_path"]).read_bytes()
     assert len(Image.open(io.BytesIO(stored)).getexif()) == 0
 
-    # Nothing is listed until the poster confirms.
+    # Nothing is listed until the poster confirms. The no-JavaScript check page shows the poster their own number.
     assert db.one("SELECT status FROM bills WHERE id = ?", (out["bill_id"],))["status"] == "DRAFT"
+    page = client.get(out["submit_url"]).text
+    assert f'value="{spec["account"]}"' in page and 'class="conf high"' in page
     form = dict(v, csrf=csrf, consent="1", words="My hours were cut this month.", alias="Luis")
     r = client.post(out["submit_url"], data=form)
     assert r.status_code == 200

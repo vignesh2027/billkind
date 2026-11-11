@@ -1174,3 +1174,5 @@ body:not(.app) .page-head { background: var(--surface); }
 .hero3d .float-chip.b { right: 0; top: 2%; }
 @media (max-width: 1000px) { .hero3d { height: 420px; } }
 @media (max-width: 560px) { .hero3d { height: 340px; margin-inline: -16px; } .hero3d .float-chip { display: none; } }
+.chip.doc { background: linear-gradient(135deg, #E6F0FF, #E2F8FE); color: var(--primary-hover); }
+.chip .ico { width: 14px; height: 14px; }

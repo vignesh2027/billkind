@@ -85,7 +85,9 @@
     {% if c.story %}<p class="bill-story">{{ c.story }}</p>{% endif %}
     <div class="bill-meta">
       <span class="chip ok">{{ check() }} {{ c.checks }} of 9 checks</span>
+      {% if c.doc_confirmed %}<span class="chip doc" title="{{ c.doc_summary }}">{{ ui('scan') }} Read from the bill</span>{% endif %}
       <span class="chip">Account {{ c.account }}</span>
+      {% if c.service_period %}<span class="chip">{{ c.service_period }}</span>{% endif %}
       {% if c.sponsors %}<span class="chip accent">{{ c.sponsors }} sponsor{{ 's' if c.sponsors != 1 }}</span>{% endif %}
     </div>
     <div class="bill-progress">

@@ -1,4 +1,5 @@
 {% extends "base.html" %}{% from "_macros.html" import ui, check %}
+{% macro lvl(k) -%}{% set c = conf.get(k) %}{% if c %}<span class="conf {{ c.level }}" title="{{ c.why }}">{{ {'high': 'High', 'medium': 'Check', 'low': 'Fix'}[c.level] }}</span>{% endif %}{%- endmacro %}
 {% block title %}Check your bill · Billkind{% endblock %}
 {% block body_class %}app{% endblock %}
 {% block main %}
@@ -18,18 +19,19 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <section class="card" aria-labelledby="bill-title">
     <div class="card-head"><h2 id="bill-title">The bill</h2>{% if ext.source == 'ai' %}<span class="ai-tag">{{ ui('spark') }} Filled by AI</span>{% endif %}</div>
-    <div class="field"><label for="biller_name">Biller</label><input id="biller_name" type="text" name="biller_name" value="{{ form.biller_name or bill.biller_name }}" required>
+    <div class="field"><label for="biller_name">Biller {{ lvl('biller_name') }}</label><input id="biller_name" type="text" name="biller_name" value="{{ form.biller_name or bill.biller_name }}" required>
       <div class="hint">{% if bill.biller_id %}<span class="verified">{{ check() }} Matched to a verified biller in our registry.</span>{% else %}Not in our verified registry yet. A person will verify the biller's account first.{% endif %}</div></div>
     <div class="grid cols-2" style="gap:12px">
-      <div class="field"><label for="amount">Amount due</label><input id="amount" type="text" name="amount" inputmode="decimal" value="{{ form.amount or amount }}" required></div>
-      <div class="field"><label for="currency">Currency</label><input id="currency" type="text" name="currency" maxlength="3" value="{{ form.currency or bill.currency }}" required></div>
+      <div class="field"><label for="amount">Amount due {{ lvl('amount') }}</label><input id="amount" type="text" name="amount" inputmode="decimal" value="{{ form.amount or amount }}" required></div>
+      <div class="field"><label for="currency">Currency {{ lvl('currency') }}</label><input id="currency" type="text" name="currency" maxlength="3" value="{{ form.currency or bill.currency }}" required></div>
     </div>
     <div class="grid cols-2" style="gap:12px">
-      <div class="field"><label for="due_date">Due date</label><input id="due_date" type="date" name="due_date" value="{{ form.due_date or bill.due_date }}" required></div>
-      <div class="field"><label for="category">Kind of bill</label><select id="category" name="category">{% for k, v in categories.items() %}<option value="{{ k }}" {{ 'selected' if (form.category or bill.category) == k }}>{{ v }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="due_date">Due date {{ lvl('due_date') }}</label><input id="due_date" type="date" name="due_date" value="{{ form.due_date or bill.due_date }}" required></div>
+      <div class="field"><label for="category">Kind of bill {{ lvl('category') }}</label><select id="category" name="category">{% for k, v in categories.items() %}<option value="{{ k }}" {{ 'selected' if (form.category or bill.category) == k }}>{{ v }}</option>{% endfor %}</select></div>
     </div>
-    <div class="field"><label for="account_reference">Account, student or patient number</label><input id="account_reference" type="text" name="account_reference" value="{{ form.account_reference or ext.account_reference or '' }}" required>
+    <div class="field"><label for="account_reference">Account, student or patient number {{ lvl('account_reference') }}</label><input id="account_reference" type="text" name="account_reference" value="{{ form.account_reference or bill.account_private or '' }}" required>
       <div class="hint">Only the biller sees this, so they can credit the right account. Sponsors see the last four characters.</div></div>
+    <div class="field"><label for="service_period">Service period <span class="opt">optional</span> {{ lvl('service_period') }}</label><input id="service_period" type="text" name="service_period" maxlength="60" value="{{ form.service_period or ext.service_period or '' }}"></div>
     <div class="grid cols-2" style="gap:12px">
       <div class="field mb-0"><label for="city">City</label><input id="city" type="text" name="city" value="{{ form.city or bill.city }}"></div>
       <div class="field mb-0"><label for="country">Country code</label><input id="country" type="text" name="country" maxlength="2" value="{{ form.country or bill.country }}"></div>
