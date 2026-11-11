@@ -252,7 +252,9 @@ def test_scan_prefills_and_confirm_posts_with_private_account(monkeypatch):
     blob = json.dumps(card)
     digits = spec["account"].replace(" ", "")
     assert spec["account"] not in blob and digits not in blob and card["account"].endswith(digits[-4:])
-    assert card["doc_confirmed"] in (True, False) and card["service_period"] == v["service_period"]
+    assert card["service_period"] == v["service_period"]
+    if ext.get("ocr", {}).get("amount"):  # Tesseract installed: both readings agree on the amount
+        assert card["doc_confirmed"] is True and card["doc_summary"].startswith("Amount")
 
 
 def test_scan_refuses_bad_files_wrong_roles_and_missing_csrf(monkeypatch):
