@@ -585,7 +585,11 @@ async def admin_home(request: Request):
     counts = {s: db.one("SELECT COUNT(*) AS n FROM bills WHERE status = ?", (s,))["n"] for s in states.BILL_LABELS}
     tickets = db.q("SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id ORDER BY t.status, t.created_at DESC LIMIT 20")
     for t in tickets:
-        t["lines"] = json.loads(t["transcript"] or "[]")
+        try:  # one damaged transcript must never take the whole console down
+            lines = json.loads(t["transcript"] or "[]")
+        except ValueError:
+            lines = []
+        t["lines"] = [x for x in lines if isinstance(x, dict)] if isinstance(lines, list) else []
     return render(request, "admin.html", review=review, failed=failed, billers=billers, hooks=hooks,
                   counts=counts, tickets=tickets, api_calls=list(reversed(client().calls[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
 

@@ -4,7 +4,7 @@ import httpx
 
 from app import db
 from app.config import settings
-from tests.conftest import BASE
+from tests.conftest import BASE, login
 
 
 def _client() -> httpx.Client:
@@ -62,3 +62,17 @@ def test_admin_and_biller_one_click_follow_the_flag(monkeypatch):
     c = _client()
     assert c.post("/login", data={"email": "admin@billkind.demo", "demo": "1"}).headers["location"] == "/admin"
     assert c.get("/admin").status_code == 200
+
+
+def test_a_long_support_chat_cannot_break_the_admin_console():
+    s, csrf = login("sponsor@billkind.demo")
+    history = [{"role": "user" if i % 2 else "assistant", "content": "x" * 700} for i in range(12)]
+    r = s.post("/api/help/escalate", json={"history": history, "subject": "long chat"}, headers={"X-CSRF": csrf})
+    assert r.status_code == 200
+    r = s.post("/api/help/escalate", json={"history": "y" * 9000, "subject": "odd"}, headers={"X-CSRF": csrf})
+    assert r.status_code == 200
+    a, _ = login("admin@billkind.demo")
+    assert a.get("/admin").status_code == 200
+    tid = db.one("SELECT id FROM tickets WHERE subject = 'long chat'")["id"]
+    db.run("UPDATE tickets SET transcript = '[{\"role\": \"user\", \"content\": \"cut' WHERE id = ?", (tid,))
+    assert a.get("/admin").status_code == 200  # a transcript damaged some other way is skipped, not fatal
