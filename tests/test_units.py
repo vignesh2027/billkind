@@ -110,3 +110,39 @@ def test_cert_checks():
     assert not webhooks.cert_url_allowed("https://paypal.com.evil.net/certs/X")
     assert not webhooks.cert_url_allowed("https://evilpaypal.com/certs/X")
     assert webhooks.cert_url_allowed("http://localhost:1/fakepaypal/certs/fake.pem", "http://localhost:1/fakepaypal")
+
+
+def test_scrub_removes_the_bills_own_account_and_short_ids():
+    from app.ai.redact import scrub
+    assert scrub("Student no KV-88213 at the school") == "Student no [number] at the school"
+    assert "STU4512" not in scrub("Patient STU4512 needs care")
+    assert "2023CS114" not in scrub("roll 2023CS114")
+    assert scrub("acct ab 12 cd 34 ef due", accounts=["AB12CD34EF"]) == "acct [number] due"
+    assert scrub("account 12345 due", accounts=["12345"]) == "account [number] due"
+    # Years, amounts, terms and periods still show.
+    assert scrub("Term 3 of 2026, 84.20 USD, Oct 2026") == "Term 3 of 2026, 84.20 USD, Oct 2026"
+
+
+def test_scrub_removes_direct_payment_handles():
+    from app.ai.redact import findings, scrub
+    for text in ("GPay amma123@okaxis", "cashapp $ammaR", "paypal me ammaraman22", "pay me at kavya@paytm"):
+        out = scrub(text, names=["Kavya Raman"])
+        assert "@" not in out and "$" not in out and "amma" not in out.lower(), (text, out)
+        assert "payment handle" in findings(text, out)
+
+
+def test_city_and_alias_keep_plain_names_only():
+    from app.ai.redact import safe_place
+    for ok in ("Chennai", "St. John's", "Quezon City", "São Paulo", "Aarav"):
+        assert safe_place(ok) == ok
+    for bad in ("Chennai GPay amma123@okaxis", "Leeds 07700900123", "cashapp $ammaR", "Paytm"):
+        assert safe_place(bad) == ""
+
+
+def test_story_never_quotes_the_account_reference():
+    import asyncio
+    from app.ai import story
+    text, source = asyncio.run(story.write(category="school_fees", city="Chennai", country="IN", alias="",
+                                           words="Fees for account ab-12cd-34ef are due", names=[],
+                                           accounts=["AB12CD34EF"]))
+    assert source == "template" and "34" not in text and "[number]" in text

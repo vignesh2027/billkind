@@ -80,7 +80,7 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
         "biller_name": (biller["name"] if biller else fields.get("biller_name")) or "Unknown biller",
         "category": fields.get("category") or (biller["category"] if biller else "other"),
         "country": fields.get("country") or (biller["country"] if biller else poster.get("country", "")),
-        "city": fields.get("city") or (biller["city"] if biller else ""),
+        "city": redact.safe_place(fields.get("city")) or (biller["city"] if biller else ""),
         "currency": currency, "amount_minor": amount_minor, "settle_currency": settlement_for(currency),
         "settle_minor": 0, "due_date": fields.get("due_date") or "", "status": "DRAFT",
         "account_masked": redact.mask_account(account_full), "account_private": account_full,
@@ -148,13 +148,14 @@ async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None =
         "biller_name": biller["name"] if biller else biller_name,
         "category": form.get("category") if form.get("category") in intake.CATEGORIES else bill["category"],
         "country": country or (biller["country"] if biller else ""),
-        "city": (form.get("city") or bill["city"] or (biller["city"] if biller else "")).strip()[:60],
+        # City and alias are shown in public as typed, so only plain names are kept (no numbers or payment handles).
+        "city": redact.safe_place(form.get("city") or bill["city"] or (biller["city"] if biller else "")),
         "currency": currency, "amount_minor": amount_minor, "settle_currency": settle, "settle_minor": settle_minor,
         "fx_note": fx_note, "due_date": form["due_date"],
         "account_masked": redact.mask_account(account_ref),
         "account_private": account_ref[:64],
         "account_hash": redact.account_hash(account_ref, biller["id"] if biller else billers.norm(biller_name)),
-        "alias": (form.get("alias") or "").strip()[:24], "poster_words": (form.get("words") or "").strip()[:1500],
+        "alias": redact.safe_place(form.get("alias"), 24), "poster_words": (form.get("words") or "").strip()[:1500],
         "story_consent": 1,
     }
     risk = fraud.assess(poster_id=poster["id"], bill={**bill, **fields}, extraction=ext,
@@ -166,7 +167,7 @@ async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None =
         ext["service_address"] = str(form["service_address"]).strip()[:120]
     text, source = await story.write(category=fields["category"], city=fields["city"], country=fields["country"],
                                      alias=fields["alias"], words=fields["poster_words"], names=names,
-                                     address=ext.get("service_address"))
+                                     address=ext.get("service_address"), accounts=[account_ref])
     ext["story_source"] = source
     period = (form.get("service_period") or ext.get("service_period") or "").strip()[:60]
     ext["service_period"] = redact.clean_period(period, names)

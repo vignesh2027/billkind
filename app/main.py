@@ -409,7 +409,16 @@ async def poster_thanks(request: Request, bill_id: str, text: str = Form(...), c
     user = auth.require(request, "poster")
     auth.check_csrf(request, csrf)
     from .ai import story
-    clean = await story.polish_thanks(text, names=[user["name"]]) if polish else story.scrub(text, names=[user["name"]])[:260]
+    bill = db.one("SELECT * FROM bills WHERE id = ? AND poster_id = ?", (bill_id, user["id"]))
+    if not bill:
+        raise HTTPException(404)
+    # The note is shown to sponsors and on the public wall: scrub the bill's own details as well as the poster's name.
+    ext = json.loads(bill["extraction"] or "{}")
+    names = [n for n in (user["name"], ext.get("customer_name")) if n]
+    extra = [a for a in (ext.get("service_address"),) if a]
+    accounts = [a for a in (bill["account_private"],) if a]
+    clean = (await story.polish_thanks(text, names=names, extra=extra, accounts=accounts) if polish
+             else story.scrub(text, names=names, extra=extra, accounts=accounts)[:260])
     try:
         funding.thank(bill_id, user["id"], clean)
     except funding.FundingError as exc:
