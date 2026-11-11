@@ -26,7 +26,7 @@ from .core import automation, events, funding, jobs, notify, posting, states, we
 from .core.money import FX_AS_OF, USD_RATES, fmt, to_minor
 from .paypal import fake, webhooks
 from .paypal.client import PayPalError, client
-from .web import auth, guards, insights_routes, views
+from .web import auth, guards, insights_routes, limits, views
 
 log = logging.getLogger("billkind")
 HERE = Path(__file__).resolve().parent
@@ -203,6 +203,16 @@ def _public_password_refused(user: dict, password: str) -> bool:
     return password == DEMO_PASSWORD and user["email"] not in {a[0] for a in demo_accounts()}
 
 
+_DEMO_POSTER_BY_IP: dict[str, str] = {}
+
+
+def ai_quota(request: Request, user: dict | None) -> None:
+    """Count one model call for this account. Past the limit, this request runs on the non-AI fallback."""
+    key = user["id"] if user else limits.client_ip(request)
+    if not limits.AI_CALLS.allow(key):
+        llm.block_for_this_request()
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = "/"):
     return render(request, "login.html", next=next, demo=demo_accounts(), error="")
@@ -212,19 +222,26 @@ async def login_page(request: Request, next: str = "/"):
 async def login(request: Request, email: str = Form(...), password: str = Form(""), next: str = Form("/"),
                 demo: str = Form("")):
     email = email.strip().lower()
+    ip = limits.client_ip(request)
     user = db.one("SELECT * FROM users WHERE email = ?", (email,))
     # One-click demo sign-in is an exact match against the offered list, checked before any hashing. The password
     # check runs off the event loop: scrypt takes tens of milliseconds and would stall every other request.
     is_demo = demo == "1" and email in {a[0] for a in demo_accounts()}
+    if not is_demo and limits.LOGIN_FAILURES.over(ip):  # too many failures from this address: no more guesses
+        return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
     ok = bool(user) and (is_demo or (not _public_password_refused(user, password) and
                                      await asyncio.to_thread(auth.check_password, password, user["password_hash"])))
     if not ok:
+        limits.LOGIN_FAILURES.allow(ip)
         return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
     resp_cookie = None
     if is_demo and user["email"] == "poster@billkind.demo":
         # Each browser gets its own demo poster account, so testers do not trip each other's velocity limits.
         own = request.cookies.get("bk_demo_poster", "")
         mine = db.one("SELECT * FROM users WHERE id = ? AND role = 'poster'", (own,)) if own else None
+        if not mine and not limits.DEMO_POSTERS.allow(ip):  # an address minting accounts in a loop reuses its latest
+            mine = db.one("SELECT * FROM users WHERE id = ?", (_DEMO_POSTER_BY_IP.get(ip, ""),))
+            resp_cookie = mine["id"] if mine else None
         if not mine:
             uid = db.new_id("U-DEMO")
             db.insert("users", {"id": uid, "email": f"poster+{uid[-6:].lower()}@billkind.demo", "name": "Kavya Raman",
@@ -232,6 +249,9 @@ async def login(request: Request, email: str = Form(...), password: str = Form("
                                 "currency": "INR", "prefs": "{}", "created_at": db.now()})
             mine = db.one("SELECT * FROM users WHERE id = ?", (uid,))
             resp_cookie = uid
+            if len(_DEMO_POSTER_BY_IP) > 20_000:
+                _DEMO_POSTER_BY_IP.clear()
+            _DEMO_POSTER_BY_IP[ip] = uid
         user = mine
     request.session["uid"] = user["id"]
     if not next.startswith("/") or next.startswith("//"):
@@ -262,6 +282,27 @@ async def inbox(request: Request):
 
 CURRENCIES = sorted(USD_RATES)
 SCAN_LIMIT = (8, 600)  # at most 8 bill readings per poster in 10 minutes (keeps the free AI tier for everyone)
+SCAN_LIMIT_TEXT = "That is a lot of bills in a few minutes. Please wait a little and try again."
+_scans_in_flight: dict[str, int] = {}
+
+
+@contextlib.contextmanager
+def _scan_slot(user: dict):
+    """Claim one bill reading for this poster, or raise PostingError. Readings still in progress count too, so
+    parallel uploads cannot all pass the check before any bill row exists."""
+    recent = db.one("SELECT COUNT(*) AS n FROM bills WHERE poster_id = ? AND created_at > ?",
+                    (user["id"], db.now() - SCAN_LIMIT[1]))["n"]
+    if recent + _scans_in_flight.get(user["id"], 0) >= SCAN_LIMIT[0]:
+        raise posting.PostingError(SCAN_LIMIT_TEXT)
+    _scans_in_flight[user["id"]] = _scans_in_flight.get(user["id"], 0) + 1
+    try:
+        yield
+    finally:
+        left = _scans_in_flight.get(user["id"], 1) - 1
+        if left > 0:
+            _scans_in_flight[user["id"]] = left
+        else:
+            _scans_in_flight.pop(user["id"], None)
 
 
 @app.get("/post", response_class=HTMLResponse)
@@ -279,7 +320,8 @@ async def post_upload(request: Request, file: UploadFile = File(...), csrf: str 
     auth.check_csrf(request, csrf)
     data = await file.read(posting.intake.MAX_BYTES + 1)
     try:
-        bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
+        with _scan_slot(user):
+            bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
     except posting.PostingError as exc:
         return render(request, "post.html", error=str(exc), samples=[], drop_samples=DROP_SAMPLES,
                       categories=CATEGORY_LABELS, currencies=CURRENCIES)
@@ -295,15 +337,13 @@ async def post_scan(request: Request, file: UploadFile = File(...), device: str 
     """
     user = auth.require(request, "poster")
     auth.check_csrf(request, request.headers.get("x-csrf"))
-    recent = db.one("SELECT COUNT(*) AS n FROM bills WHERE poster_id = ? AND created_at > ?",
-                    (user["id"], db.now() - SCAN_LIMIT[1]))["n"]
-    if recent >= SCAN_LIMIT[0]:
-        return JSONResponse({"error": "That is a lot of bills in a few minutes. Please wait a little and try again."},
-                            status_code=429)
     data = await file.read(posting.intake.MAX_BYTES + 1)
     try:
-        bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
+        with _scan_slot(user):
+            bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
     except posting.PostingError as exc:
+        if str(exc) == SCAN_LIMIT_TEXT:
+            return JSONResponse({"error": SCAN_LIMIT_TEXT}, status_code=429)
         return JSONResponse({"error": str(exc)}, status_code=400)
     return posting.scan_view(bill)
 
@@ -409,6 +449,8 @@ async def poster_thanks(request: Request, bill_id: str, text: str = Form(...), c
                         polish: str = Form("")):
     user = auth.require(request, "poster")
     auth.check_csrf(request, csrf)
+    if polish:
+        ai_quota(request, user)
     from .ai import story
     bill = db.one("SELECT * FROM bills WHERE id = ? AND poster_id = ?", (bill_id, user["id"]))
     if not bill:
@@ -456,6 +498,9 @@ async def api_pass_reset(request: Request):
 async def api_create_order(request: Request):
     user = auth.require(request, "sponsor")
     auth.check_csrf(request, request.headers.get("x-csrf"))
+    if not limits.ORDERS.allow(user["id"]):
+        return JSONResponse({"error": "That is a lot of payments in a few minutes. Please wait a little and try again."},
+                            status_code=429)
     body = await request.json()
     try:
         picks = [(p["bill_id"], int(p["amount_minor"])) for p in body.get("picks", [])]
@@ -729,6 +774,7 @@ async def bulk_preview(request: Request):
     auth.check_csrf(request, request.headers.get("x-csrf"))
     body = await request.json()
     if body.get("text"):
+        ai_quota(request, user)
         f, source = await bulk.parse(str(body["text"]))
     else:
         f, source = bulk.clean(body.get("filter") or {}), "form"
@@ -763,8 +809,9 @@ async def agent_page(request: Request):
 
 @app.post("/sponsor/agent/parse")
 async def agent_parse(request: Request, rules: str = Form(...), csrf: str = Form("")):
-    auth.require(request, "sponsor")
+    user = auth.require(request, "sponsor")
     auth.check_csrf(request, csrf)
+    ai_quota(request, user)
     policy, source = await agent.parse_rules(rules)
     request.session["agent_draft"] = {"rules": rules[:1000], "policy": policy, "source": source}
     return RedirectResponse("/sponsor/agent#confirm", status_code=303)
@@ -880,6 +927,7 @@ async def help_page(request: Request):
 async def help_ask(request: Request):
     user = auth.require(request)
     auth.check_csrf(request, request.headers.get("x-csrf"))
+    ai_quota(request, user)
     body = await request.json()
     return await support.answer(user, str(body.get("question", "")), body.get("history") or [])
 

@@ -7,6 +7,7 @@ fall back without special cases. The API key is never logged.
 from __future__ import annotations
 
 import base64
+import contextvars
 import json
 import logging
 import re
@@ -17,6 +18,19 @@ from ..config import settings
 
 URL = "https://api.groq.com/openai/v1/chat/completions"
 log = logging.getLogger("billkind.ai")
+
+# Set for one request when its account is over the model-call limit (app/web/limits.py): every caller then takes its
+# usual non-AI fallback, exactly as when the model is unavailable.
+_blocked: contextvars.ContextVar[bool] = contextvars.ContextVar("ai_blocked", default=False)
+
+
+def block_for_this_request() -> None:
+    _blocked.set(True)
+
+
+def available() -> bool:
+    return settings.ai_enabled and not _blocked.get()
+
 
 # A record of recent calls for the admin "AI activity" panel (no prompts with personal data).
 CALLS: list[dict] = []
@@ -44,7 +58,7 @@ def _parse_json(text: str) -> dict | None:
 async def chat(messages: list[dict], *, model: str | None = None, json_mode: bool = False,
                max_tokens: int = 900, temperature: float = 0.2, kind: str = "chat",
                timeout: float = 45) -> str | None:
-    if not settings.ai_enabled:
+    if not available():
         return None
     model = model or settings.ai_text_model
     body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
@@ -82,7 +96,7 @@ async def chat_raw(messages: list[dict], *, tools: list[dict] | None = None, kin
 
     `models` is an ordered fallback list: on a rate limit (HTTP 429) or a server error the next model is tried.
     """
-    if not settings.ai_enabled:
+    if not available():
         return None
     import asyncio
     import time

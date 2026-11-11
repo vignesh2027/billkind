@@ -59,6 +59,15 @@ def server():
     srv.should_exit = True
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Every test signs in from 127.0.0.1; the per-address limits are tested on their own."""
+    from app.web import limits
+    for w in limits.ALL:
+        w.reset()
+    yield
+
+
 TEST_PASSWORD = "a-test-only-password"
 _ONE_CLICK = {"sponsor@billkind.demo", "bigsponsor@billkind.demo", "poster@billkind.demo", "biller@billkind.demo",
               "admin@billkind.demo"}

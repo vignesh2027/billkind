@@ -165,3 +165,75 @@ def test_many_byte_ranges_on_a_static_file_are_cheap():
     assert time.time() - t0 < 1.0
     r = _client().get("/static/og-image.png", headers={"Range": "bytes=0-99"})
     assert r.status_code == 206 and len(r.content) == 100  # ordinary range requests still work
+
+
+def test_scan_limit_covers_both_upload_routes_and_counts_readings_in_flight(monkeypatch):
+    import asyncio as _asyncio
+    from app import main
+    from app.core import posting
+    from tests.conftest import login
+    s, csrf = login("poster@billkind.demo")
+    data = s.get("/samples/fresh/water.jpg").content
+    gate = {"n": 0}
+    real = posting.upload
+
+    async def slow_upload(*a, **kw):
+        gate["n"] += 1
+        await _asyncio.sleep(0.3)
+        return await real(*a, **kw)
+    monkeypatch.setattr(posting, "upload", slow_upload)
+    monkeypatch.setattr(main, "SCAN_LIMIT", (3, 600))
+
+    async def burst():
+        async with httpx.AsyncClient(base_url=BASE, cookies=s.cookies, timeout=60) as ac:
+            return await _asyncio.gather(*[ac.post("/api/post/scan", files={"file": ("w.jpg", data, "image/jpeg")},
+                                                   headers={"X-CSRF": csrf}) for _ in range(6)])
+    codes = sorted(r.status_code for r in _asyncio.run(burst()))
+    assert codes.count(200) <= 3 and 429 in codes, codes
+    r = s.post("/post", data={"csrf": csrf}, files={"file": ("w.jpg", data, "image/jpeg")})
+    assert "a lot of bills" in r.text  # the no-JavaScript route enforces the same limit
+
+
+def test_model_calls_past_the_limit_use_the_fallback(monkeypatch):
+    from app.ai import llm
+    from app.web import limits
+    from tests.conftest import login
+    from app.config import settings
+    monkeypatch.setattr(settings, "ai_disabled", False)
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    seen = []
+
+    async def fake_post(self, url, **kw):
+        seen.append(url)
+        raise httpx.ConnectError("offline in tests")
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(limits.AI_CALLS, "limit", 2)
+    s, csrf = login("sponsor@billkind.demo")
+    for _ in range(4):
+        r = s.post("/api/help", json={"question": "How do refunds work?"}, headers={"X-CSRF": csrf})
+        assert r.status_code == 200 and r.json()["answer"]
+    assert len(seen) == 2  # the third and fourth questions never reached the model
+    assert not llm._blocked.get()  # the block was for those requests only
+
+
+def test_demo_poster_accounts_from_one_address_are_capped(monkeypatch):
+    from app.web import limits
+    monkeypatch.setattr(limits.DEMO_POSTERS, "limit", 2)
+    ids = set()
+    for _ in range(4):
+        c = _client()
+        c.post("/login", data={"email": "poster@billkind.demo", "demo": "1"})
+        ids.add(c.cookies.get("bk_demo_poster"))
+    assert len(ids) == 2  # the third and fourth logins reuse the latest account from this address
+
+
+def test_repeated_wrong_passwords_are_cut_off(monkeypatch):
+    from app.web import limits
+    from tests.conftest import TEST_PASSWORD, login
+    login("poster02@billkind.demo")  # gives the account a known private password
+    monkeypatch.setattr(limits.LOGIN_FAILURES, "limit", 3)
+    c = _client()
+    for _ in range(3):
+        c.post("/login", data={"email": "poster02@billkind.demo", "password": "wrong"})
+    r = c.post("/login", data={"email": "poster02@billkind.demo", "password": TEST_PASSWORD})
+    assert r.status_code == 200 and _signed_in_as(c) is None  # even the right password waits now
