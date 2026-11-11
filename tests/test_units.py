@@ -197,3 +197,21 @@ def test_single_model_call_retries_once_after_a_rate_limit(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
     out = asyncio.run(llm.chat_raw([{"role": "user", "content": "hello"}], kind="test"))
     assert out == {"role": "assistant", "content": "hi"} and len(sent) == 2
+
+
+def test_backup_copies_the_database_and_keeps_the_newest(tmp_path):
+    import datetime as dt
+    import sqlite3
+    import tarfile
+    from app import db
+    from scripts import backup_db
+    for day in (1, 2, 3):
+        out, tar = backup_db.backup(tmp_path, keep=2, now=dt.datetime(2026, 11, day, 12, 0))
+    copy = sqlite3.connect(out)
+    assert copy.execute("SELECT COUNT(*) FROM bills").fetchone()[0] == db.one("SELECT COUNT(*) AS n FROM bills")["n"]
+    copy.close()
+    assert sorted(p.name for p in tmp_path.glob("billkind-*.db")) == ["billkind-20261102-1200.db",
+                                                                     "billkind-20261103-1200.db"]
+    if tar:
+        with tarfile.open(tar) as t:
+            assert t.getnames()[0] == "uploads"

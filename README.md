@@ -217,6 +217,8 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 
 The live demo runs on an Oracle Cloud Always Free VM: one Docker container (Python 3.12, Tesseract, uvicorn on port 8800) behind Caddy, which provides HTTPS, with the SQLite database and uploads on a host volume. It starts the same way as the Modal app (open the database, seed only if empty, serve) with the PayPal sandbox and the background jobs on.
 
+Backups: `python -m scripts.backup_db` writes an online copy of the database and a tarball of the uploads to `BACKUP_DIR` (by default `data/backups`) and keeps the newest 14. On the VM it can run from the host's crontab, for example `0 * * * * docker exec <container> python -m scripts.backup_db`, with that folder copied off the machine to object storage. The app runs as a single uvicorn worker, since live events and rate limits are held in process. A `request_body { max_size 10MB }` line in the Caddy site block adds a second body size limit in front of the app's own.
+
 `modal deploy modal_app.py` is the earlier host and still works: it runs one container with SQLite backed up to a Modal Volume. It scales to zero when idle and wakes on the next request or PayPal webhook, then stays up for 20 minutes after the last request. Secrets are read from `.env` at deploy time.
 
 ## Project layout
