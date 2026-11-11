@@ -19,6 +19,17 @@ class PostingError(Exception):
     pass
 
 
+READ_SLOTS = 2  # documents read at once; the rest wait, so uploads can never fill the shared worker threads
+_slots: dict[int, asyncio.Semaphore] = {}
+
+
+def _read_slot() -> asyncio.Semaphore:
+    key = id(asyncio.get_running_loop())
+    if key not in _slots:
+        _slots[key] = asyncio.Semaphore(READ_SLOTS)
+    return _slots[key]
+
+
 def _bill_id() -> str:
     while True:
         bid = "BK-" + "".join(random.choices("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", k=5))
@@ -31,7 +42,8 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
     if len(data) > intake.MAX_BYTES:
         raise PostingError("Files up to 8 MB, please.")
     try:
-        doc = await asyncio.to_thread(intake.read_document, data, filename, content_type)
+        async with _read_slot():
+            doc = await asyncio.to_thread(intake.read_document, data, filename, content_type)
     except intake.DocumentError as exc:
         raise PostingError(str(exc)) from exc
     except Exception as exc:
