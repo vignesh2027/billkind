@@ -176,3 +176,24 @@ def test_webhook_falls_back_to_the_verify_api_only_on_network_errors(monkeypatch
     headers["PAYPAL-CERT-URL"] = "https://api.paypal.com/v1/notifications/certs/CERT-other"
     ok, method, _ = asyncio.run(webhooks.verify(headers, b"{}", {}, webhook_id="WH", transport=httpx.MockTransport(down)))
     assert ok and method == "api" and len(calls) == 1
+
+
+def test_single_model_call_retries_once_after_a_rate_limit(monkeypatch):
+    import asyncio
+    import httpx
+    from app.ai import llm
+    from app.config import settings
+    monkeypatch.setattr(settings, "ai_disabled", False)
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    answers = [httpx.Response(429, headers={"retry-after": "0"}, json={"error": {"message": "slow down"}}),
+               httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "hi"}}]})]
+    sent = []
+
+    async def fake_post(self, url, **kw):
+        sent.append(kw["json"]["model"])
+        r = answers.pop(0)
+        r.request = httpx.Request("POST", url)
+        return r
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    out = asyncio.run(llm.chat_raw([{"role": "user", "content": "hello"}], kind="test"))
+    assert out == {"role": "assistant", "content": "hi"} and len(sent) == 2
