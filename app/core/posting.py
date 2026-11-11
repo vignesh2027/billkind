@@ -6,6 +6,7 @@ import asyncio
 import datetime as dt
 import json
 import random
+import re
 from pathlib import Path
 
 from .. import db
@@ -213,6 +214,40 @@ def list_bill(bill: dict) -> dict:
                 "Sponsors can now see your bill card. Money goes straight to the biller when it is covered.",
                 bill_id=bill["id"])
     return bill
+
+
+def admin_attach_biller(bill_id: str, biller_id: str) -> dict:
+    """Link a bill in review to a registry biller (for example one the admin just added for a real utility)."""
+    bill = db.one("SELECT * FROM bills WHERE id = ?", (bill_id,))
+    if not bill or bill["status"] != "REVIEW":
+        raise PostingError("Only bills in review can be linked to a biller.")
+    biller = db.one("SELECT * FROM billers WHERE id = ?", (biller_id,))
+    if not biller:
+        raise PostingError("Unknown biller.")
+    db.update("bills", "id", bill_id, biller_id=biller["id"], biller_name=biller["name"],
+              account_hash=redact.account_hash(bill["account_private"], biller["id"]) if bill["account_private"]
+              else bill["account_hash"], updated_at=db.now())
+    return db.one("SELECT * FROM bills WHERE id = ?", (bill_id,))
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def admin_add_biller(form: dict) -> str:
+    """Add a biller to the registry, unverified. The existing verify step is the second, separate check."""
+    name = str(form.get("name") or "").strip()[:120]
+    category = str(form.get("category") or "")
+    country = str(form.get("country") or "").strip().upper()
+    email = str(form.get("paypal_email") or "").strip()[:254]
+    if not name or not billers.norm(name):
+        raise PostingError("Please enter the biller's name as printed on the bill.")
+    if category not in intake.CATEGORIES:
+        raise PostingError("Please choose the biller's category.")
+    if not re.fullmatch(r"[A-Z]{2}", country):
+        raise PostingError("Please enter the biller's two-letter country code.")
+    if not EMAIL_RE.match(email):
+        raise PostingError("Please enter the PayPal email address the biller receives payments at.")
+    return billers.add(name, category, country, str(form.get("city") or "").strip()[:60], email, False)
 
 
 def admin_decide(bill_id: str, approve: bool, note: str = "") -> dict:

@@ -617,6 +617,34 @@ async def admin_payout(request: Request, bill_id: str, action: str = Form(...), 
     return RedirectResponse("/admin", status_code=303)
 
 
+@app.post("/admin/bills/{bill_id}/biller")
+async def admin_attach_biller(request: Request, bill_id: str, biller_id: str = Form(...), csrf: str = Form("")):
+    """Link a bill in review to a registry biller, so a real bill from a newly added biller can be approved."""
+    auth.require(request, "admin")
+    auth.check_csrf(request, csrf)
+    try:
+        posting.admin_attach_biller(bill_id, biller_id)
+    except posting.PostingError as exc:
+        return render(request, "error.html", message=str(exc))
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/billers")
+async def admin_add_biller(request: Request):
+    """Add a biller (unverified). Fields: name, category, country, city, paypal_email, and optionally bill_id to link
+    a bill in review to it straight away. Verifying it stays a separate step."""
+    auth.require(request, "admin")
+    form = dict(await request.form())
+    auth.check_csrf(request, form.get("csrf"))
+    try:
+        bid = posting.admin_add_biller(form)
+        if form.get("bill_id"):
+            posting.admin_attach_biller(str(form["bill_id"]), bid)
+    except posting.PostingError as exc:
+        return render(request, "error.html", message=str(exc))
+    return RedirectResponse("/admin#billers", status_code=303)
+
+
 @app.post("/admin/billers/{biller_id}/verify")
 async def admin_verify_biller(request: Request, biller_id: str, csrf: str = Form("")):
     auth.require(request, "admin")
