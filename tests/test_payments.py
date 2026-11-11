@@ -123,7 +123,9 @@ def test_failed_payout_goes_to_admin_then_refund():
 
 def test_bulk_order_one_checkout_per_bill_payouts():
     big, cb = login("bigsponsor@billkind.demo")
-    usd = db.q("SELECT * FROM bills WHERE status = 'LISTED' AND settle_currency = 'USD' ORDER BY id LIMIT 3")
+    # Seeded bills only: other test modules leave open bills of their own with reservations on them.
+    usd = db.q("SELECT * FROM bills WHERE status = 'LISTED' AND settle_currency = 'USD' AND id LIKE 'BK-S%' "
+               "ORDER BY id LIMIT 3")
     oid = _pay(big, cb, [{"bill_id": b["id"], "amount_minor": b["settle_minor"]} for b in usd])
     order = fake.ORDERS[oid]
     assert len(order["purchase_units"][0]["items"]) == len(usd)
