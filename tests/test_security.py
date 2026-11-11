@@ -1,5 +1,7 @@
 """Sign-in, session and request-level protections."""
 
+import re
+
 import httpx
 
 from app import db
@@ -237,3 +239,61 @@ def test_repeated_wrong_passwords_are_cut_off(monkeypatch):
         c.post("/login", data={"email": "poster02@billkind.demo", "password": "wrong"})
     r = c.post("/login", data={"email": "poster02@billkind.demo", "password": TEST_PASSWORD})
     assert r.status_code == 200 and _signed_in_as(c) is None  # even the right password waits now
+
+
+def test_login_from_another_site_is_refused():
+    for origin in ("https://evil.example.com", "null"):
+        c = _client()
+        c.post("/login", data={"email": "sponsor@billkind.demo", "demo": "1"}, headers={"Origin": origin})
+        assert _signed_in_as(c) is None, origin
+    c = _client()
+    c.post("/login", data={"email": "sponsor@billkind.demo", "demo": "1"}, headers={"Origin": BASE})
+    assert _signed_in_as(c) is not None
+    c = _client()
+    c.post("/login", data={"email": "sponsor@billkind.demo", "demo": "1"}, headers={"Referer": "https://evil.example/x"})
+    assert _signed_in_as(c) is None
+
+
+def test_signing_in_starts_a_fresh_session():
+    c = _client()
+    before = re.search(r'name="csrf" content="([0-9a-f]+)"', c.get("/how").text).group(1)
+    c.post("/login", data={"email": "sponsor@billkind.demo", "demo": "1"})
+    after = re.search(r'name="csrf" content="([0-9a-f]+)"', c.get("/inbox").text).group(1)
+    assert before != after
+
+
+def test_signing_out_retires_copies_of_the_session_cookie():
+    from tests.conftest import login
+    p, csrf = login("poster03@billkind.demo")
+    copy = httpx.Client(base_url=BASE, follow_redirects=False, timeout=30, cookies=dict(p.cookies))
+    assert copy.get("/me").status_code == 200
+    p.post("/logout")
+    assert copy.get("/me").status_code == 303  # the copied cookie no longer works
+    # A shared one-click account stays signed in for everyone else when one visitor signs out.
+    a, _ = login("sponsor@billkind.demo")
+    b, _ = login("sponsor@billkind.demo")
+    a.post("/logout")
+    assert b.get("/sponsor", follow_redirects=False).status_code == 200
+
+
+def test_vault_setup_is_never_started_from_another_site():
+    from tests.conftest import login
+    s, _ = login("sponsor@billkind.demo")
+    n = db.one("SELECT COUNT(*) AS n FROM vault_tokens")["n"]
+    r = s.get("/sponsor/vault/connect?next=/sponsor", headers={"Sec-Fetch-Site": "cross-site"},
+              follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/sponsor"
+    assert db.one("SELECT COUNT(*) AS n FROM vault_tokens")["n"] == n
+
+
+def test_shared_demo_accounts_never_show_a_visitors_paypal_login():
+    from app import main
+    assert main.mask_email("amma.raman@example.com") == "a***@example.com"
+    from tests.conftest import login
+    s, _ = login("bigsponsor@billkind.demo")
+    db.insert("vault_tokens", {"id": db.new_id("VLT"), "sponsor_id": "U-BIG", "setup_token_id": "x", "status": "ACTIVE",
+                               "payment_token_id": "PT-SECRET-1234", "payer_email": "visitor.one@example.com",
+                               "created_at": db.now() + 1})
+    html = s.get("/sponsor/agent").text
+    db.run("UPDATE vault_tokens SET status = 'REPLACED' WHERE payment_token_id = 'PT-SECRET-1234'")
+    assert "visitor.one@example.com" not in html and "v***@example.com" in html and "PT-SECRET" not in html

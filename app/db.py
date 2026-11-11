@@ -16,7 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL,
   password_hash TEXT NOT NULL, country TEXT DEFAULT 'US', currency TEXT DEFAULT 'USD',
-  prefs TEXT DEFAULT '{}', created_at REAL NOT NULL
+  prefs TEXT DEFAULT '{}', created_at REAL NOT NULL, session_epoch INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS billers (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, country TEXT NOT NULL,
@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 # Columns added after the first release. connect() adds any that an existing database is missing.
 MIGRATIONS = [
     ("payout_items", "sender_batch_id", "TEXT DEFAULT ''"),
+    ("users", "session_epoch", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 _conn: sqlite3.Connection | None = None

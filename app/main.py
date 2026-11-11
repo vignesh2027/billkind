@@ -8,6 +8,7 @@ import json
 import logging
 import mimetypes
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
@@ -213,6 +214,32 @@ def ai_quota(request: Request, user: dict | None) -> None:
         llm.block_for_this_request()
 
 
+def _same_site_form(request: Request) -> bool:
+    """A sign-in form posted from this site. Browsers send Origin (or at least Referer) on form posts; a missing
+    pair is allowed for older clients, but "null" (sandboxed frames, opaque redirects) is not."""
+    src = request.headers.get("origin")
+    if src is None:
+        src = request.headers.get("referer")
+        if not src:
+            return True
+    if src == "null":
+        return False
+    allowed = {urlsplit(settings.app_base_url).netloc.lower(), request.headers.get("host", "").lower()}
+    return urlsplit(src).netloc.lower() in allowed
+
+
+def shared_demo(user: dict | None) -> bool:
+    """A one-click demo account that every visitor shares."""
+    return bool(user) and user["email"] in {a[0] for a in demo_accounts()}
+
+
+def mask_email(email: str | None) -> str:
+    if not email or "@" not in email:
+        return email or ""
+    name, domain = email.split("@", 1)
+    return f"{name[:1]}***@{domain}"
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = "/"):
     return render(request, "login.html", next=next, demo=demo_accounts(), error="")
@@ -223,6 +250,8 @@ async def login(request: Request, email: str = Form(...), password: str = Form("
                 demo: str = Form("")):
     email = email.strip().lower()
     ip = limits.client_ip(request)
+    if not _same_site_form(request):  # login CSRF: another site signing the visitor in to an account it controls
+        return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
     user = db.one("SELECT * FROM users WHERE email = ?", (email,))
     # One-click demo sign-in is an exact match against the offered list, checked before any hashing. The password
     # check runs off the event loop: scrypt takes tens of milliseconds and would stall every other request.
@@ -253,19 +282,25 @@ async def login(request: Request, email: str = Form(...), password: str = Form("
                 _DEMO_POSTER_BY_IP.clear()
             _DEMO_POSTER_BY_IP[ip] = uid
         user = mine
+    request.session.clear()  # nothing from before sign-in carries over, the CSRF token included
     request.session["uid"] = user["id"]
+    request.session["ep"] = int(user.get("session_epoch") or 0)
     if not next.startswith("/") or next.startswith("//"):
         next = "/"
     if next == "/":
         next = {"sponsor": "/deck", "poster": "/me", "admin": "/admin", "biller": "/biller"}.get(user["role"], "/")
     resp = RedirectResponse(next, status_code=303)
     if resp_cookie:
-        resp.set_cookie("bk_demo_poster", resp_cookie, max_age=60 * 86400, httponly=True, samesite="lax")
+        resp.set_cookie("bk_demo_poster", resp_cookie, max_age=60 * 86400, httponly=True, samesite="lax",
+                        secure=settings.app_base_url.startswith("https"))
     return resp
 
 
 @app.post("/logout")
 async def logout(request: Request):
+    user = auth.current_user(request)
+    if user and not shared_demo(user):  # shared one-click accounts stay signed in for the other visitors
+        db.run("UPDATE users SET session_epoch = session_epoch + 1 WHERE id = ?", (user["id"],))
     request.session.clear()
     return RedirectResponse("/", status_code=303)
 
@@ -622,6 +657,8 @@ async def receipt(request: Request, contribution_id: str):
         raise HTTPException(404)
     b = db.one("SELECT * FROM bills WHERE id = ?", (c["bill_id"],))
     item = db.one("SELECT * FROM payout_items WHERE bill_id = ? ORDER BY created_at DESC", (b["id"],))
+    if shared_demo(user):
+        c = dict(c, payer_email=mask_email(c["payer_email"]))
     return render(request, "receipt.html", c=c, b=b, card=views.card(b, user["currency"]), item=item)
 
 
@@ -801,8 +838,12 @@ async def agent_page(request: Request):
         decisions = [agent.decision_view(d) for d in db.q(
             "SELECT * FROM agent_decisions WHERE agent_id = ? ORDER BY created_at DESC LIMIT 40", (a["id"],))]
         spent = float(agent.month_spent_usd(a["id"], user["id"]))
+    token = automation.active_token(user["id"])
+    if token and shared_demo(user):  # every visitor shares this account: never show one visitor's PayPal login
+        token = dict(token, payer_email=mask_email(token["payer_email"]),
+                     payment_token_id="\u2022\u2022\u2022\u2022" + (token["payment_token_id"] or "")[-4:])
     return render(request, "agent.html", agent=a, policy=json.loads(a["policy"]) if a else None,
-                  decisions=decisions, spent=spent, token=automation.active_token(user["id"]),
+                  decisions=decisions, spent=spent, token=token,
                   period="since the demo budget was renewed" if a and agent.budget_renewed(user["id"]) else "this month",
                   draft=request.session.pop("agent_draft", None), pledges=automation.pledges_for(user["id"]))
 
@@ -858,6 +899,8 @@ async def vault_connect(request: Request, next: str = "/sponsor/agent"):
     user = auth.require(request, "sponsor")
     if not next.startswith("/") or next.startswith("//"):
         next = "/sponsor/agent"
+    if request.headers.get("sec-fetch-site") == "cross-site":  # only Billkind's own links start a PayPal setup
+        return RedirectResponse(next, status_code=303)
     request.session["vault_next"] = next
     try:
         st = await client().create_setup_token(return_url=settings.app_base_url + "/sponsor/vault/return",
