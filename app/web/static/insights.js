@@ -24,10 +24,10 @@
 
   // ---------- Theme: Billkind tokens ----------
   const theme = S.studioTheme.withParams({
-    accentColor: '#2450D0',
-    foregroundColor: '#0A1A38',
+    accentColor: '#1463FF',
+    foregroundColor: '#0B1E5B',
     backgroundColor: '#FFFFFF',
-    borderColor: '#D6E0EE',
+    borderColor: '#D5E2F5',
     fontFamily: 'Manrope, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
   });
 

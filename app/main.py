@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
@@ -21,7 +22,7 @@ from .ai import agent, bulk, llm, support
 from .ai.intake import CATEGORY_LABELS
 from .config import settings
 from .core import automation, events, funding, jobs, notify, posting, states, webhook_handlers
-from .core.money import FX_AS_OF, fmt, to_minor
+from .core.money import FX_AS_OF, USD_RATES, fmt, to_minor
 from .paypal import fake, webhooks
 from .paypal.client import PayPalError, client
 from .web import auth, insights_routes, views
@@ -43,6 +44,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Billkind", lifespan=lifespan, docs_url=None, redoc_url=None)
+# Compress text responses (CSS, JS, HTML). Server-sent events are excluded by Starlette's middleware.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax",
                    https_only=settings.app_base_url.startswith("https"), max_age=14 * 86400)
 app.mount("/static", StaticFiles(directory=str(HERE / "web" / "static")), name="static")
@@ -216,6 +219,7 @@ async def inbox(request: Request):
 
 # Poster --------------------------------------------------------------------------------
 
+CURRENCIES = sorted(USD_RATES)
 SCAN_LIMIT = (8, 600)  # at most 8 bill readings per poster in 10 minutes (keeps the free AI tier for everyone)
 
 
@@ -224,7 +228,7 @@ async def post_page(request: Request):
     auth.require(request, "poster")
     samples = sorted(p.name for p in (HERE.parent / "samples").glob("*") if p.suffix in (".jpg", ".png", ".pdf"))
     return render(request, "post.html", error="", samples=samples, drop_samples=DROP_SAMPLES,
-                  categories=CATEGORY_LABELS)
+                  categories=CATEGORY_LABELS, currencies=CURRENCIES)
 
 
 @app.post("/post")
@@ -237,7 +241,7 @@ async def post_upload(request: Request, file: UploadFile = File(...), csrf: str 
         bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
     except posting.PostingError as exc:
         return render(request, "post.html", error=str(exc), samples=[], drop_samples=DROP_SAMPLES,
-                      categories=CATEGORY_LABELS)
+                      categories=CATEGORY_LABELS, currencies=CURRENCIES)
     return RedirectResponse(f"/post/{bill['id']}", status_code=303)
 
 

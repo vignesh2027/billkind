@@ -1,72 +1,261 @@
-{% extends "base.html" %}{% from "_macros.html" import ui %}
-{% block title %}Post a bill · Billkind{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import ui, check %}
+{% block title %}Drop a bill · Billkind{% endblock %}
 {% block body_class %}app{% endblock %}
 {% block main %}
-<section class="page-head poster-hero">
-  <div class="container">
-    <span class="eyebrow accent">{{ ui('heart') }} Post a bill</span>
-    <h1>Ask for help with one bill.</h1>
-    <p class="lead measure">Take a clear photo of the whole bill, or upload the PDF. We read it for you, check it, and hide your personal details before anyone sees it. You never handle the money: sponsors pay the biller directly.</p>
+<section class="page-head poster-hero drop-head">
+  <div class="container spread" style="align-items:end">
+    <div>
+      <span class="eyebrow">{{ ui('spark') }} Drop a bill</span>
+      <h1>Drag. Drop. <span class="grad-text">Done.</span></h1>
+      <p class="lead measure">Drop a photo or PDF of the bill. AI reads it in a few seconds and fills everything in. You check each field, then post. Sponsors pay the biller directly; you never handle the money.</p>
+    </div>
+    <ol class="dd-steps" id="dd-steps" aria-label="Progress">
+      <li class="now" data-step="drag"><span class="dd-dot">1</span><span><strong>Drag</strong><small>your bill in</small></span></li>
+      <li data-step="drop"><span class="dd-dot">2</span><span><strong>Drop</strong><small>we read it</small></span></li>
+      <li data-step="done"><span class="dd-dot">3</span><span><strong>Done</strong><small>check and post</small></span></li>
+    </ol>
   </div>
 </section>
 <div class="container page-body">
-  <div class="post-grid">
-    <section class="card" aria-labelledby="up-title">
-      <div class="card-head"><h2 id="up-title">Your bill</h2><span class="ai-tag">{{ ui('spark') }} Read by AI</span></div>
-      {% if error %}<div class="alert err" role="alert">{{ ui('alert') }}<span>{{ error }}</span></div>{% endif %}
-      <form method="post" action="/post" enctype="multipart/form-data" id="up">
+  {% if error %}<div class="alert err" role="alert">{{ ui('alert') }}<span>{{ error }}</span></div>{% endif %}
+  <div class="alert err" role="alert" id="drop-error" hidden>{{ ui('alert') }}<span></span></div>
+  <div class="drop-grid" id="drop-grid">
+    <section class="drop-col" aria-labelledby="up-title">
+      <h2 id="up-title" class="sr-only">Your bill</h2>
+      <form method="post" action="/post" enctype="multipart/form-data" id="up" class="drop-card">
         <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" id="device">
-        <label class="dropzone" for="file" id="drop">
-          <span class="icon-tile">{{ ui('camera') }}</span>
-          <strong>Take a photo or choose a file</strong>
-          <span class="muted" id="file-hint">Photo (JPG or PNG) or PDF of the whole bill. Make sure the amount, due date and account number are readable.</span>
+        <label class="drop" for="file" id="drop">
+          <span class="drop-glow" aria-hidden="true"></span>
+          <span class="drop-empty" id="drop-empty">
+            <span class="drop-icon" aria-hidden="true">
+              <svg viewBox="0 0 64 64" fill="none"><rect x="14" y="8" width="36" height="46" rx="6" fill="#fff" stroke="currentColor" stroke-width="3"/><path d="M22 20h14M22 28h20M22 36h10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="46" cy="46" r="12" fill="url(#dz)"/><path d="M46 40v12M40 46l6-6 6 6" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="dz" x1="34" y1="34" x2="58" y2="58"><stop stop-color="#1463FF"/><stop offset="1" stop-color="#22C7F2"/></linearGradient></defs></svg>
+            </span>
+            <strong class="drop-title"><span class="when-idle">Drag your bill here</span><span class="when-over">Drop it. We will read it.</span></strong>
+            <span class="drop-sub">or <u>choose a file</u>, or take a photo on your phone</span>
+            <span class="drop-formats">JPG, PNG, WebP or PDF · up to 8 MB · PDFs up to 4 pages</span>
+          </span>
           <span class="sr-only">Bill photo or PDF</span>
-          <input id="file" type="file" name="file" accept="image/*,application/pdf" capture="environment" required>
+          <input id="file" type="file" name="file" accept="image/jpeg,image/png,image/webp,application/pdf">
         </label>
-        <div class="reading" id="wait" hidden role="status">
-          <span>{{ ui('scan') }} Reading your bill. This takes a few seconds.</span>
-          <div class="scan-line w80"></div><div class="scan-line w60"></div><div class="scan-line w40"></div>
+        <div class="scan" id="scan" hidden>
+          <div class="scan-doc" id="scan-doc">
+            <img id="scan-img" alt="Your bill" hidden>
+            <div class="scan-pdf" id="scan-pdf" hidden>{{ ui('receipt') }}<strong id="scan-pdf-name"></strong><span>PDF</span></div>
+            <span class="scan-beam" aria-hidden="true"></span>
+            <span class="scan-grid" aria-hidden="true"></span>
+            <span class="scan-done" aria-hidden="true">{{ check() }}</span>
+          </div>
+          <div class="scan-status" role="status" aria-live="polite">
+            <strong id="scan-title">Reading your bill</strong>
+            <ul class="scan-list" id="scan-list">
+              <li data-k="biller_name">Biller</li><li data-k="amount">Amount and currency</li><li data-k="due_date">Due date</li>
+              <li data-k="category">Kind of bill</li><li data-k="account_reference">Account number</li><li data-k="service_period">Service period</li>
+            </ul>
+            <p class="hint" id="scan-note">The photo stays private. Location data is removed and only reviewers can open it.</p>
+            <button class="btn secondary small" type="button" id="again" hidden>{{ ui('refund') }} Use a different bill</button>
+          </div>
         </div>
-        <div class="row" style="margin-top:18px">
-          <button class="btn lg" type="submit" id="go">{{ ui('scan') }} Read my bill</button>
-          <span class="muted" style="font-size:14px">Nothing is shown to sponsors until you check it and agree.</span>
-        </div>
+        <noscript><button class="btn lg" type="submit" style="margin-top:16px">{{ ui('scan') }} Read my bill</button></noscript>
       </form>
-      <div class="hr"></div>
-      <div class="grid cols-3" style="gap:14px">
-        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="icon-tile ok" style="width:40px;height:40px">{{ ui('eye-off') }}</span><div style="font-size:14px"><strong>Private</strong><div class="muted">Names, phones and addresses are removed.</div></div></div>
-        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="icon-tile ok" style="width:40px;height:40px">{{ ui('lock') }}</span><div style="font-size:14px"><strong>Masked</strong><div class="muted">Sponsors see only the last four of your account.</div></div></div>
-        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="icon-tile ok" style="width:40px;height:40px">{{ ui('bank') }}</span><div style="font-size:14px"><strong>Direct</strong><div class="muted">The biller is paid. You never handle money.</div></div></div>
-      </div>
+
+      <section class="sample-rail" aria-labelledby="samples-title" id="sample-rail">
+        <div class="spread">
+          <div><h2 id="samples-title">No bill handy?</h2><p class="muted">Drag a sample onto the drop zone, or tap one. Each is a fictional bill, made fresh every time.</p></div>
+          <button class="btn" type="button" id="try-sample">{{ ui('spark') }} Try a sample bill</button>
+        </div>
+        <div class="sample-tiles">
+          {% for kind, label in drop_samples.items() %}
+          <button type="button" class="sample-tile" draggable="true" data-kind="{{ kind }}" aria-label="Use the sample {{ label|lower }}">
+            <img src="/static/samples/{{ kind }}.webp" alt="" width="120" height="164" loading="lazy" draggable="false">
+            <span>{{ label }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        <details class="test-files"><summary>Files for testing the safety checks</summary>
+          <p class="hint">Posting the same file twice is refused as a duplicate, and the edited clinic bill is held for review.</p>
+          <div class="sample-list">{% for s in samples %}<a href="/samples/{{ s }}" download>{{ ui('download') }} {{ s }}</a>{% endfor %}</div>
+        </details>
+      </section>
     </section>
-    <div class="stack">
-      <section class="card flat" aria-labelledby="next-title">
-        <h2 id="next-title" style="font-size:20px">What happens next</h2>
-        <ol class="howto" style="margin-top:16px">
-          <li><div><strong>AI reads the bill</strong><span>The biller, amount, due date and account number.</span></div></li>
-          <li><div><strong>You check it</strong><span>Fix anything that is wrong and add a few words, if you want.</span></div></li>
+
+    <aside class="drop-side" id="drop-side" aria-label="What happens next">
+      <section class="card glass-card">
+        <h2 class="side-title">What happens next</h2>
+        <ol class="howto">
+          <li><div><strong>AI reads the bill</strong><span>Biller, amount, due date, kind of bill, account number and service period, each with a confidence level.</span></div></li>
+          <li><div><strong>You check it</strong><span>Every field stays editable. Nothing is posted until you say so.</span></div></li>
           <li><div><strong>Nine safety checks</strong><span>Most bills go live straight away; some wait for a person.</span></div></li>
           <li><div><strong>The biller is paid</strong><span>You see the PAID stamp and can send a thank-you.</span></div></li>
         </ol>
       </section>
-      <section class="card flat" aria-labelledby="samples-title">
-        <h2 id="samples-title" style="font-size:20px">Sample bills for testing</h2>
-        <p class="muted" style="font-size:14px">All billers and people on these samples are fictional. Download one, then upload it here.</p>
-        <a class="btn dark block" href="/samples/fresh-school-bill.jpg" download>{{ ui('download') }} Download a fresh sample school bill</a>
-        <p class="hint">Each download is unique, so it passes the duplicate check. The fixed samples below test the checks: posting the same file twice is refused as a duplicate, and the edited clinic bill is held for review.</p>
-        <div class="sample-list">{% for s in samples %}<a href="/samples/{{ s }}" download>{{ ui('receipt') }} {{ s }}</a>{% endfor %}</div>
+      <section class="card glass-card privacy-card">
+        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="icon-tile ok">{{ ui('eye-off') }}</span><div><strong>Private</strong><div class="muted">Names, phones and addresses never reach sponsors. Photo location data is removed.</div></div></div>
+        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="icon-tile ok">{{ ui('lock') }}</span><div><strong>Masked</strong><div class="muted">Sponsors see only the last four characters of your account number.</div></div></div>
+        <div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="icon-tile ok">{{ ui('bank') }}</span><div><strong>Direct</strong><div class="muted">The biller is paid. You never handle money.</div></div></div>
       </section>
-    </div>
+    </aside>
+
+    <form method="post" class="confirm card" id="confirm" hidden aria-labelledby="confirm-title">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="card-head">
+        <div><h2 id="confirm-title">Check what we read</h2><p class="muted mb-0" id="confirm-sub"></p></div>
+        <span class="ai-tag" id="read-by">{{ ui('spark') }} Filled by AI</span>
+      </div>
+      <div class="conf-legend" aria-hidden="true"><span class="conf high">High</span> two readings agree or the registry confirms <span class="conf medium">Check</span> read once <span class="conf low">Fix</span> missing or unusual</div>
+      <div class="field" data-f="biller_name"><label for="f-biller_name">Biller</label><input id="f-biller_name" type="text" name="biller_name" required autocomplete="off"><div class="hint"></div></div>
+      <div class="grid cols-2 tight-grid">
+        <div class="field" data-f="amount"><label for="f-amount">Amount due</label><input id="f-amount" type="text" name="amount" inputmode="decimal" required autocomplete="off"><div class="hint"></div></div>
+        <div class="field" data-f="currency"><label for="f-currency">Currency</label><select id="f-currency" name="currency" required>{% for c in currencies %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select><div class="hint"></div></div>
+      </div>
+      <div class="grid cols-2 tight-grid">
+        <div class="field" data-f="due_date"><label for="f-due_date">Due date</label><input id="f-due_date" type="date" name="due_date" required><div class="hint"></div></div>
+        <div class="field" data-f="category"><label for="f-category">Kind of bill</label><select id="f-category" name="category">{% for k, v in categories.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select><div class="hint"></div></div>
+      </div>
+      <div class="field" data-f="account_reference"><label for="f-account_reference">Account, student or patient number</label><input id="f-account_reference" type="text" name="account_reference" required autocomplete="off"><div class="hint"></div></div>
+      <div class="grid cols-2 tight-grid">
+        <div class="field" data-f="service_period"><label for="f-service_period">Service period <span class="opt">optional</span></label><input id="f-service_period" type="text" name="service_period" maxlength="60" autocomplete="off"><div class="hint"></div></div>
+        <div class="field" data-f="service_address"><label for="f-service_address">Service address <span class="opt">private</span></label><input id="f-service_address" type="text" name="service_address" maxlength="120" autocomplete="off"><div class="hint"></div></div>
+      </div>
+      <div class="grid cols-2 tight-grid">
+        <div class="field"><label for="f-city">City</label><input id="f-city" type="text" name="city" autocomplete="off"></div>
+        <div class="field"><label for="f-country">Country code</label><input id="f-country" type="text" name="country" maxlength="2" autocomplete="off"></div>
+      </div>
+      <div class="hr"></div>
+      <div class="field"><label for="f-words">A few words for sponsors <span class="opt">optional</span></label><textarea id="f-words" name="words" placeholder="For example: My hours were cut this month and the bill is due before my next pay."></textarea><div class="hint">We turn it into a short, respectful note and remove names, numbers and addresses.</div></div>
+      <div class="field"><label for="f-alias">First name or nickname to show <span class="opt">optional</span></label><input id="f-alias" type="text" name="alias" maxlength="24"></div>
+      <label class="check card sunken" style="padding:16px"><input type="checkbox" name="consent" value="1" required> <span>I agree that a privacy-safe card for this bill, with the note written from my words, is shown to sponsors. The money goes to the biller, not to me.</span></label>
+      <div class="row" style="margin-top:18px">
+        <button class="btn lg grow" type="submit" id="post-btn">{{ ui('shield') }} Run the checks and post</button>
+      </div>
+      <p class="hint">Changing the amount or the biller by hand sends the bill to a person for review.</p>
+    </form>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}<script>
 document.getElementById('device').value = [navigator.platform, screen.width + 'x' + screen.height, Intl.DateTimeFormat().resolvedOptions().timeZone].join('|').slice(0, 64);
 (() => {
-  const file = document.getElementById('file'), drop = document.getElementById('drop'), hint = document.getElementById('file-hint');
-  file.addEventListener('change', () => { if (file.files[0]) { hint.innerHTML = ''; const b = document.createElement('span'); b.className = 'file-name'; b.textContent = file.files[0].name; hint.appendChild(b); hint.append(' is ready. Press Read my bill.'); } });
-  ['dragenter', 'dragover'].forEach(k => drop.addEventListener(k, () => drop.classList.add('over')));
-  ['dragleave', 'drop'].forEach(k => drop.addEventListener(k, () => drop.classList.remove('over')));
+  const $ = id => document.getElementById(id);
+  const csrf = document.querySelector('meta[name=csrf]').content;
+  const drop = $('drop'), file = $('file'), scan = $('scan'), grid = $('drop-grid');
+  const kinds = {{ drop_samples|tojson }};
+  const LABEL = {high: 'High', medium: 'Check', low: 'Fix'};
+  let busy = false, sampleIx = 0, objectUrl = null;
+
+  function step(name) {
+    const order = ['drag', 'drop', 'done'];
+    document.querySelectorAll('#dd-steps li').forEach(li => {
+      const i = order.indexOf(li.dataset.step), at = order.indexOf(name);
+      li.className = i < at ? 'done' : i === at ? 'now' : '';
+    });
+  }
+  function showError(msg) {
+    const box = $('drop-error'); box.querySelector('span').textContent = msg; box.hidden = false;
+    box.scrollIntoView({block: 'center', behavior: BK.reduce ? 'auto' : 'smooth'});
+  }
+  function reset() {
+    busy = false; scan.hidden = true; drop.hidden = false; scan.className = 'scan';
+    $('confirm').hidden = true; $('drop-side').hidden = false; $('sample-rail').hidden = false; grid.classList.remove('has-form');
+    $('again').hidden = true; file.value = ''; step('drag');
+    document.querySelectorAll('#scan-list li').forEach(li => li.className = '');
+  }
+  $('again').addEventListener('click', reset);
+
+  async function read(blob, name) {
+    if (busy) return;
+    const okType = /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(blob.type) || /\.(jpe?g|png|webp|pdf)$/i.test(name || '');
+    if (!okType) { showError('Please choose a photo (JPG, PNG or WebP) or a PDF of the bill.'); return; }
+    if (blob.size > 8 * 1024 * 1024) { showError('Files up to 8 MB, please.'); return; }
+    busy = true; $('drop-error').hidden = true; step('drop');
+    drop.hidden = true; scan.hidden = false; scan.className = 'scan reading';
+    $('scan-title').textContent = 'Reading your bill';
+    const isPdf = blob.type === 'application/pdf' || /\.pdf$/i.test(name || '');
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (!isPdf) { objectUrl = URL.createObjectURL(blob); $('scan-img').src = objectUrl; $('scan-img').hidden = false; $('scan-pdf').hidden = true; }
+    else { $('scan-img').hidden = true; $('scan-pdf').hidden = false; $('scan-pdf-name').textContent = name || 'bill.pdf'; }
+    // Light up the list while the request runs; the real result replaces it.
+    const items = [...document.querySelectorAll('#scan-list li')];
+    items.forEach(li => li.className = '');
+    let tick = 0;
+    const timer = setInterval(() => { if (tick < items.length) items[tick++].classList.add('looking'); }, 420);
+    const fd = new FormData();
+    fd.append('file', blob, name || 'bill');
+    fd.append('device', $('device').value);
+    let res, data;
+    try {
+      res = await fetch('/api/post/scan', {method: 'POST', body: fd, headers: {'X-CSRF': csrf}});
+      data = await res.json().catch(() => ({}));
+    } catch (e) { data = {error: 'Could not reach Billkind. Check your connection and try again.'}; }
+    clearInterval(timer);
+    if (!res || !res.ok) {
+      reset(); showError((data && (data.error || data.detail)) || 'That file could not be read. Please try another photo.');
+      return;
+    }
+    items.forEach(li => { const c = data.confidence[li.dataset.k]; li.className = 'got ' + (c ? c.level : ''); });
+    scan.className = 'scan done';
+    const n = Object.values(data.confidence).filter(c => c.level !== 'low').length;
+    $('scan-title').textContent = 'Done. ' + n + ' fields filled.';
+    $('again').hidden = false;
+    setTimeout(() => fill(data), BK.reduce ? 0 : 650);
+  }
+
+  function fill(data) {
+    const f = $('confirm');
+    f.action = data.submit_url;
+    for (const [k, v] of Object.entries(data.values)) {
+      const el = $('f-' + k); if (!el) continue;
+      if (el.tagName === 'SELECT' && v && !el.querySelector('option[value="' + CSS.escape(v) + '"]')) {
+        const o = document.createElement('option'); o.value = v; o.textContent = v; el.appendChild(o);
+      }
+      el.value = v || '';
+    }
+    f.querySelectorAll('.field[data-f]').forEach(div => {
+      const c = data.confidence[div.dataset.f], hint = div.querySelector('.hint'), label = div.querySelector('label');
+      div.querySelectorAll('.conf').forEach(x => x.remove());
+      div.classList.remove('is-low', 'is-medium', 'is-high');
+      if (!c) { hint.textContent = ''; return; }
+      const tag = document.createElement('span'); tag.className = 'conf ' + c.level; tag.textContent = LABEL[c.level];
+      label.appendChild(tag); div.classList.add('is-' + c.level); hint.textContent = c.why;
+    });
+    const s = data.summary.counts, check = data.summary.check.length;
+    $('confirm-sub').textContent = s.high + ' confirmed, ' + s.medium + ' to glance at' + (check ? ', ' + check + ' to fix' : '') + '. Account shown to sponsors as ' + (data.account_masked || 'masked') + '.';
+    $('read-by').hidden = data.source !== 'ai';
+    $('drop-side').hidden = true; $('sample-rail').hidden = true; grid.classList.add('has-form');
+    f.hidden = false; step('done'); busy = false;
+    const first = f.querySelector('.field.is-low input, .field.is-low select') || $('f-biller_name');
+    f.scrollIntoView({block: 'start', behavior: BK.reduce ? 'auto' : 'smooth'});
+    setTimeout(() => first.focus({preventScroll: true}), 350);
+  }
+
+  file.addEventListener('change', () => { if (file.files[0]) read(file.files[0], file.files[0].name); });
+  ['dragenter', 'dragover'].forEach(k => drop.addEventListener(k, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'dragend'].forEach(k => drop.addEventListener(k, () => drop.classList.remove('over')));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    const kind = e.dataTransfer.getData('text/x-billkind-sample');
+    if (kind) { sample(kind); return; }
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) read(f, f.name);
+  });
+  // A file dropped anywhere on the page goes to the drop zone instead of opening in the browser.
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => { if (!drop.contains(e.target)) { e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f && !drop.hidden) read(f, f.name); } });
+
+  async function sample(kind) {
+    if (busy) return;
+    try {
+      const r = await fetch('/samples/fresh/' + kind + '.jpg', {cache: 'no-store'});
+      if (!r.ok) throw new Error();
+      const b = await r.blob();
+      read(new File([b], 'sample-' + kind + '-bill.jpg', {type: 'image/jpeg'}), 'sample-' + kind + '-bill.jpg');
+    } catch (e) { showError('Could not load the sample bill. Please try again.'); }
+  }
+  document.querySelectorAll('.sample-tile').forEach(t => {
+    t.addEventListener('click', () => sample(t.dataset.kind));
+    t.addEventListener('dragstart', e => { e.dataTransfer.setData('text/x-billkind-sample', t.dataset.kind); e.dataTransfer.effectAllowed = 'copy'; drop.classList.add('invite'); });
+    t.addEventListener('dragend', () => drop.classList.remove('invite'));
+  });
+  $('try-sample').addEventListener('click', () => { const ks = Object.keys(kinds); sample(ks[sampleIx++ % ks.length]); });
+  $('confirm').addEventListener('submit', () => { $('post-btn').disabled = true; $('post-btn').lastChild.textContent = ' Running the nine checks'; });
 })();
-document.getElementById('up').addEventListener('submit', () => { document.getElementById('go').disabled = true; document.getElementById('wait').hidden = false; });
 </script>{% endblock %}

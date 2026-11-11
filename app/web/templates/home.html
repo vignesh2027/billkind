@@ -4,7 +4,7 @@
   <div class="container hero-grid">
     <div>
       <span class="eyebrow">{{ ui('shield') }} Bills paid directly to the biller</span>
-      <h1 id="hero-title">Pay a stranger's bill. <em>Straight to the biller.</em></h1>
+      <h1 id="hero-title">Pay a stranger's bill. <em class="grad-text">Straight to the biller.</em></h1>
       <p class="lead">People anywhere post a real bill they cannot pay. AI reads it and checks it. Sponsors swipe right, and PayPal sends the money to the school, clinic or utility on the bill. Never to the person.</p>
       <div class="hero-ctas">
         <a class="btn lg" href="/login?next=/deck">Start paying bills {{ ui('arrow') }}</a>
@@ -16,10 +16,9 @@
         <span>{{ ui('check') }} Personal details hidden</span>
       </div>
     </div>
-    <div class="hero-stage" aria-hidden="true">
-      {% for c in cards[:3]|reverse %}{{ billcard(c) }}{% endfor %}
-      <div class="float-chip a"><span class="icon-tile ok">{{ ui('bank') }}</span><div>Money goes to the biller<small class="muted">never to the person who posted</small></div></div>
-      <div class="float-chip b"><span class="icon-tile">{{ ui('spark') }}</span><div>Read and checked by AI<small class="muted">then nine safety checks</small></div></div>
+    <div class="hero-stage hero3d" id="hero3d" aria-hidden="true">
+      <img class="hero3d-still" src="/static/hero-still.webp" alt="" width="820" height="810" fetchpriority="high">
+      <div class="float-chip b"><span class="icon-tile">{{ ui('robot') }}</span><div>An agent routes the payment<small class="muted">limits enforced in code</small></div></div>
     </div>
   </div>
 </section>
@@ -227,6 +226,21 @@
 </section>
 {% endblock %}
 {% block scripts %}
+<script>
+/* 3D hero: loaded after the page is interactive, only with WebGL and without data saver; the still stays otherwise. */
+(() => {
+  const el = document.getElementById('hero3d');
+  if (!el || /[?&]still=1/.test(location.search)) return;
+  let ok = false;
+  try { const c = document.createElement('canvas'); const gl = c.getContext('webgl2') || c.getContext('webgl'); ok = !!gl;
+        const lose = gl && gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (e) { ok = false; }
+  const conn = navigator.connection;
+  if (!ok || (conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')))) return;
+  const start = () => import('/static/hero3d.js?v=1').then(m => m.mount(el)).catch(() => {});
+  const go = () => ('requestIdleCallback' in window ? requestIdleCallback(start, {timeout: 1500}) : setTimeout(start, 400));
+  if (document.readyState === 'complete') go(); else addEventListener('load', go, {once: true});
+})();
+</script>
 <script>
 (() => {
   const C = {{ countries|tojson }};
