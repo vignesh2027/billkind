@@ -62,6 +62,7 @@ def _body_limit(path: str) -> int:
 
 # Added last, so they run first: an oversized body is refused before anything reads it.
 app.add_middleware(guards.BodyLimit, limit_for=_body_limit)
+app.add_middleware(guards.RangeGuard)
 app.add_middleware(guards.SecurityHeaders, https=settings.app_base_url.startswith("https"))
 # The AR model files: Scene Viewer reads the glTF type, and iOS Quick Look needs the USDZ type to open the file.
 # WebP is listed too: slim server images have no mime.types file and would send it as text/plain.

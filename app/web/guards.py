@@ -81,3 +81,24 @@ class SecurityHeaders:
             await send(message)
 
         await self.app(scope, receive, with_headers)
+
+
+MAX_RANGES = 8
+
+
+class RangeGuard:
+    """Serve the whole file instead of honouring a Range header with many parts. Starlette merges ranges with a
+    quadratic loop on the event loop, so one header with thousands of tiny ranges stalls every request. No browser
+    or media player asks for more than a few ranges at once."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = scope.get("headers") or []
+            for k, v in headers:
+                if k == b"range" and (v.count(b",") >= MAX_RANGES or len(v) > 256):
+                    scope = dict(scope, headers=[(hk, hv) for hk, hv in headers if hk != b"range"])
+                    break
+        await self.app(scope, receive, send)

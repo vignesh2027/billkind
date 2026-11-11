@@ -154,3 +154,14 @@ def test_thank_you_note_is_scrubbed_of_the_bills_details_and_sent_once():
     assert db.one("SELECT thank_you FROM bills WHERE id = 'BK-THX01'")["thank_you"] == note
     assert db.one("SELECT COUNT(*) AS n FROM messages WHERE kind = 'thanks' AND bill_id = 'BK-THX01'")["n"] == 1
     assert db.one("SELECT COUNT(*) AS n FROM events WHERE kind = 'thanks' AND bill_id = 'BK-THX01'")["n"] == 1
+
+
+def test_many_byte_ranges_on_a_static_file_are_cheap():
+    import time
+    ranges = ",".join(f"{i}-{i}" for i in range(0, 3200, 2))
+    t0 = time.time()
+    r = _client().get("/static/og-image.png", headers={"Range": f"bytes={ranges}"})
+    assert r.status_code == 200  # served whole instead of parsing thousands of ranges
+    assert time.time() - t0 < 1.0
+    r = _client().get("/static/og-image.png", headers={"Range": "bytes=0-99"})
+    assert r.status_code == 206 and len(r.content) == 100  # ordinary range requests still work
