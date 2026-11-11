@@ -37,7 +37,7 @@ def test_landing_shows_the_flow_and_the_ar_viewer():
 def test_text_has_no_em_dashes_or_arrows():
     pages = [httpx.get(BASE + "/").text, (STATIC / "hero3d.js").read_text(), (STATIC / "billscene.js").read_text()]
     for text in pages:
-        assert "—" not in text
+        assert "\u2014" not in text
         assert "->" not in re.sub(r"<!--|-->", "", text)
 
 
@@ -61,4 +61,4 @@ def test_brand_assets_exist_and_are_not_registered_marks():
     assert (brand / "brand-card.png").exists()
     for svg in ("logo.svg", "wordmark.svg"):
         text = (STATIC / svg).read_text()
-        assert "®" not in text and "&reg;" not in text
+        assert "\u00ae" not in text and "&reg;" not in text
