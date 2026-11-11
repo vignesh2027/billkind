@@ -26,7 +26,7 @@ from .core import automation, events, funding, jobs, notify, posting, states, we
 from .core.money import FX_AS_OF, USD_RATES, fmt, to_minor
 from .paypal import fake, webhooks
 from .paypal.client import PayPalError, client
-from .web import auth, insights_routes, views
+from .web import auth, guards, insights_routes, views
 
 log = logging.getLogger("billkind")
 HERE = Path(__file__).resolve().parent
@@ -49,6 +49,20 @@ app = FastAPI(title="Billkind", lifespan=lifespan, docs_url=None, redoc_url=None
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax",
                    https_only=settings.app_base_url.startswith("https"), max_age=14 * 86400)
+UPLOAD_PATHS = ("/post", "/api/post/scan")
+
+
+def _body_limit(path: str) -> int:
+    if path == "/webhooks/paypal":
+        return 64 * guards.KB
+    if path in UPLOAD_PATHS:
+        return posting.intake.MAX_BYTES + 256 * guards.KB  # the file plus the form around it
+    return 1024 * guards.KB
+
+
+# Added last, so they run first: an oversized body is refused before anything reads it.
+app.add_middleware(guards.BodyLimit, limit_for=_body_limit)
+app.add_middleware(guards.SecurityHeaders, https=settings.app_base_url.startswith("https"))
 # The AR model files: Scene Viewer reads the glTF type, and iOS Quick Look needs the USDZ type to open the file.
 # WebP is listed too: slim server images have no mime.types file and would send it as text/plain.
 mimetypes.add_type("image/webp", ".webp")

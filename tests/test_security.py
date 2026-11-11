@@ -96,3 +96,35 @@ def test_paypal_mode_is_checked_and_the_simulator_never_runs_with_real_credentia
     assert Settings().paypal_mode == "sandbox"
     monkeypatch.setenv("PAYPAL_CLIENT_ID", "")
     assert Settings().is_fake  # no credentials: the local simulator, as before
+
+
+def test_oversized_bodies_are_refused_before_anything_reads_them():
+    c = _client()
+    big = b"x" * (9 * 1024 * 1024)
+    r = c.post("/api/post/scan", files={"file": ("a.pdf", big, "application/pdf")})  # no session
+    assert r.status_code == 413
+    r = c.post("/webhooks/paypal", content=b"{" + b" " * (100 * 1024) + b"}", headers={"content-type": "application/json"})
+    assert r.status_code == 413
+
+    def chunks():  # no Content-Length: counted as it arrives
+        for _ in range(40):
+            yield b"y" * (64 * 1024)
+    r = c.post("/webhooks/paypal", content=chunks(), headers={"content-type": "application/json"})
+    assert r.status_code == 413
+    assert c.get("/healthz").status_code == 200
+
+
+def test_ordinary_upload_still_passes_the_body_limit():
+    from tests.conftest import login
+    s, csrf = login("poster@billkind.demo")
+    data = s.get("/samples/fresh/water.jpg").content
+    r = s.post("/api/post/scan", files={"file": ("water.jpg", data, "image/jpeg")}, headers={"X-CSRF": csrf})
+    assert r.status_code == 200, r.text
+
+
+def test_pages_cannot_be_framed_by_other_sites():
+    r = _client().get("/login")
+    assert r.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
