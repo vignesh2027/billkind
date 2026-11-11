@@ -647,6 +647,14 @@ async def apply_payout_item(resource: dict) -> str:
     row = db.one("SELECT * FROM payout_items WHERE sender_item_id = ?", (sid,))
     if not row:
         return "unknown item"
+    if row["status"] == "SUCCESS" and status in ("REFUNDED", "REVERSED", "RETURNED"):
+        # Money that reached the biller came back (a refund or reversal of the payout). The bill stays as it was:
+        # record the item's new state and tell the admins, who decide what happens next.
+        db.update("payout_items", "sender_item_id", sid, status=status, updated_at=db.now())
+        _admin_notice(f"Payout {status} after it was paid: bill {row['bill_id']}",
+                      f"PayPal reports payout item {sid} for bill {row['bill_id']} as {status} after it was paid to "
+                      f"the biller, so the biller no longer holds that money. Check the bill before doing anything.")
+        return status
     if row["status"] == status or row["status"] in TERMINAL_PAYOUT:
         return "no change"
     db.update("payout_items", "sender_item_id", sid, status=status, updated_at=db.now(),

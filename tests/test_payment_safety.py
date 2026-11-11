@@ -328,3 +328,19 @@ def test_a_new_checkout_releases_the_sponsors_earlier_unapproved_holds():
     r = s.post(f"/api/orders/{oid}/capture", headers={"X-CSRF": c})
     assert r.status_code == 200 and r.json()["status"] == "COMPLETED"
     assert wait_for(lambda: _status(first["id"]) in ("FUNDED", "PAYOUT_SENT", "PAID"))
+
+
+def test_payout_reversed_after_success_is_recorded_and_reported():
+    bill, item = _unclaimed_bill()
+    asyncio.run(funding.apply_payout_item({"payout_item": {"sender_item_id": item["sender_item_id"]},
+                                           "payout_item_id": item["payout_item_id"],
+                                           "transaction_status": "SUCCESS", "transaction_id": "TXN-1"}))
+    out = asyncio.run(funding.apply_payout_item({"payout_item": {"sender_item_id": item["sender_item_id"]},
+                                                 "payout_item_id": item["payout_item_id"],
+                                                 "transaction_status": "REVERSED"}))
+    assert out == "REVERSED"
+    assert db.one("SELECT status FROM payout_items WHERE sender_item_id = ?", (item["sender_item_id"],))["status"] \
+        == "REVERSED"
+    assert _status(bill["id"]) == "PAID"
+    assert db.one("SELECT 1 FROM messages WHERE user_id = 'U-ADMIN' AND subject LIKE ?",
+                  (f"Payout REVERSED after it was paid: bill {bill['id']}",))
