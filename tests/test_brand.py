@@ -16,8 +16,12 @@ STATIC = Path(__file__).resolve().parent.parent / "app" / "web" / "static"
 
 def test_landing_shows_the_flow_and_the_ar_viewer():
     html = httpx.get(BASE + "/").text
-    assert "Pay a stranger's bill." in html and "Straight to the biller." in html
-    assert "never the person" in html
+    assert "Be the reason a bill gets stamped" in html and "Kindness, with a receipt" in html
+    assert "Your money pays the bill, never a person." in html
+    assert "Got a bill? Drop it here" in html and "Three steps. One PAID stamp." in html
+    # The biller-not-person rule is said once in the hero, not three times.
+    hero = html.split('aria-labelledby="hero-title"', 1)[1].split("</section>", 1)[0]
+    assert hero.lower().count("never") == 1
     for counter in ("k-paid", "k-countries", "k-sponsors", "k-live"):
         assert f'id="{counter}"' in html
     for step in ("Drop a bill", "A stranger pays with PayPal", "The biller gets paid"):
@@ -64,3 +68,17 @@ def test_brand_assets_exist_and_are_not_registered_marks():
     for svg in ("logo.svg", "wordmark.svg"):
         text = (STATIC / svg).read_text()
         assert "\u00ae" not in text and "&reg;" not in text
+
+
+def test_fonts_are_self_hosted_with_their_licences():
+    css = (STATIC / "app.css").read_text()
+    html = httpx.get(BASE + "/").text
+    fonts = STATIC / "fonts"
+    for name in ("inter-latin", "inter-latin-ext", "bricolage-grotesque-latin", "bricolage-grotesque-latin-ext", "manrope-latin"):
+        assert f"/static/fonts/{name}.woff2" in css
+        assert (fonts / f"{name}.woff2").read_bytes()[:4] == b"wOF2"
+    for family in ("Inter", "BricolageGrotesque"):
+        assert "SIL Open Font License" in (fonts / f"OFL-{family}.txt").read_text()
+    assert "fonts.googleapis.com" not in html and "fonts.gstatic.com" not in css
+    assert '<link rel="preload" href="/static/fonts/inter-latin.woff2"' in html
+    assert ".stat-value {" in css and "tabular-nums" in css.split(".stat-value {", 1)[1].split("}", 1)[0]

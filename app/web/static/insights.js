@@ -28,7 +28,7 @@
     foregroundColor: '#0B1E5B',
     backgroundColor: '#FFFFFF',
     borderColor: '#D5E2F5',
-    fontFamily: 'Manrope, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
   });
 
   // ---------- Custom widgets ----------
