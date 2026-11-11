@@ -170,4 +170,4 @@ Everything in this repository runs in the PayPal sandbox. Going live would need 
 - Python 3.12, FastAPI, Jinja2 server-rendered pages, SQLite. Inline JS only for the swipe gesture, server-sent events and the PayPal JS SDK.
 - `app/paypal/fake.py` is a local fake of every PayPal endpoint Billkind uses, with the documented request and response shapes, signed webhooks and a buyer-approval page. It lets the app and its tests run without credentials. `PAYPAL_MODE=sandbox` switches to the real sandbox.
 - Background loop for reminders, recurring charges, agent runs, payout polling and reservation expiry.
-- Hosted on Modal: one always-on container, SQLite on a Modal Volume.
+- Hosted on an Oracle Cloud Always Free VM: one always-on Docker container behind Caddy (HTTPS), SQLite on a host volume. The Modal app (`modal_app.py`, SQLite on a Modal Volume) is kept as an alternative host.

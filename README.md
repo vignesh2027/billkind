@@ -8,8 +8,9 @@ Built for the PayPal AI Hackathon 2026. Sandbox only: no real money moves.
 
 | | |
 |---|---|
-| Live demo | https://applemacbook6sep2004--billkind.us-east.modal.run |
-| Demo video | https://youtu.be/b28_fd53w5E |
+| Live demo | https://billkind.140-245-16-129.sslip.io |
+| Demo video | https://youtu.be/dtZiq1pcscs |
+| Video music | Music: "Light Thought var 1" Kevin MacLeod (incompetech.com)<br>Licensed under Creative Commons: By Attribution 4.0 License<br>http://creativecommons.org/licenses/by/4.0/ |
 | License | MIT |
 
 | | |
@@ -182,7 +183,9 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 
 ### Deploy
 
-`modal deploy modal_app.py` runs one container with SQLite backed up to a Modal Volume. It scales to zero when idle and wakes on the next request or PayPal webhook, then stays up for 20 minutes after the last request. Secrets are read from `.env` at deploy time.
+The live demo runs on an Oracle Cloud Always Free VM: one Docker container (Python 3.12, Tesseract, uvicorn on port 8800) behind Caddy, which provides HTTPS, with the SQLite database and uploads on a host volume. It starts the same way as the Modal app (open the database, seed only if empty, serve) with the PayPal sandbox and the background jobs on.
+
+`modal deploy modal_app.py` is the earlier host and still works: it runs one container with SQLite backed up to a Modal Volume. It scales to zero when idle and wakes on the next request or PayPal webhook, then stays up for 20 minutes after the last request. Secrets are read from `.env` at deploy time.
 
 ## Project layout
 
