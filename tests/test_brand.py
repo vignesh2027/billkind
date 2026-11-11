@@ -48,6 +48,8 @@ def test_ar_model_files_are_served_with_their_types():
     assert magic == b"glTF" and version == 2 and length == len(glb.content) < 1_000_000
     usdz = httpx.get(BASE + "/static/ar/bill.usdz")
     assert usdz.status_code == 200 and usdz.headers["content-type"].startswith("model/vnd.usdz+zip")
+    poster = httpx.get(BASE + "/static/ar/bill-poster.webp")
+    assert poster.status_code == 200 and poster.headers["content-type"] == "image/webp"
     names = zipfile.ZipFile(STATIC / "ar" / "bill.usdz").namelist()
     assert names[0].endswith(".usda") and any(n.endswith(".png") for n in names)
 
