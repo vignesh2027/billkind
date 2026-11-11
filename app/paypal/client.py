@@ -7,12 +7,19 @@ which implements the same paths and payload shapes.
 from __future__ import annotations
 
 import asyncio
+import collections
+import concurrent.futures
 import time
 import uuid
 
 import httpx
 
 from ..config import settings
+
+
+# The SDK is synchronous. It gets its own worker threads, so a sponsor's capture never queues behind document
+# reading or image rendering in the shared default pool.
+_SDK_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="paypal-sdk")
 
 
 class PayPalError(Exception):
@@ -61,7 +68,7 @@ class SdkBridge:
         def run():
             return getattr(getattr(self.sdk, controller), method)(options)
         try:
-            resp = await asyncio.to_thread(run)
+            resp = await asyncio.get_running_loop().run_in_executor(_SDK_POOL, run)
         except Exception as exc:  # the SDK raises ErrorException / ApiException with the HTTP response attached
             code = getattr(exc, "response_code", 0) or 0
             text = getattr(getattr(exc, "response", None), "text", "") or str(exc)
@@ -85,7 +92,8 @@ class PayPalClient:
         self._token: str | None = None
         self._token_exp = 0.0
         self._token_locks: dict[int, asyncio.Lock] = {}
-        self.calls: list[tuple[str, str, int]] = []  # (method, path, status) for the API log
+        # (method, path, status) for the admin API log; only the latest calls are kept
+        self.calls: collections.deque[tuple[str, str, int]] = collections.deque(maxlen=200)
         self.sdk: SdkBridge | None = None
         if settings.paypal_sdk == "apimatic" and transport is None:
             try:

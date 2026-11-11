@@ -71,4 +71,7 @@ DEMO_POSTERS = Window(20, 3600)
 # PayPal orders one sponsor account can open.
 ORDERS = Window(30, 600)
 
-ALL = (AI_CALLS, LOGIN_FAILURES, DEMO_POSTERS, ORDERS)
+# Freshly rendered sample bills from one address (each costs about half a second of CPU).
+SAMPLES = Window(30, 60)
+
+ALL = (AI_CALLS, LOGIN_FAILURES, DEMO_POSTERS, ORDERS, SAMPLES)

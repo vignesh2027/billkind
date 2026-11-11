@@ -387,24 +387,41 @@ async def post_scan(request: Request, file: UploadFile = File(...), device: str 
 # so a tester never trips the duplicate checks.
 DROP_SAMPLES = {"electricity": "Electricity bill, Detroit", "school": "School fee receipt, Chennai",
                 "water": "Water bill, Leeds", "clinic": "Clinic bill, Tampa"}
+SAMPLE_RENDERS = 2  # sample images rendered at once; each takes about half a second of CPU
+_sample_slots: dict[int, asyncio.Semaphore] = {}
+
+
+async def _render_sample(fn, *args) -> bytes:
+    key = id(asyncio.get_running_loop())
+    if key not in _sample_slots:
+        _sample_slots[key] = asyncio.Semaphore(SAMPLE_RENDERS)
+    async with _sample_slots[key]:
+        return await asyncio.to_thread(fn, *args)
+
+
+def _sample_allowed(request: Request) -> None:
+    if not limits.SAMPLES.allow(limits.client_ip(request)):
+        raise HTTPException(429, "Too many sample bills at once. Please wait a moment.")
 
 
 @app.get("/samples/fresh/{kind}.jpg")
-async def fresh_drop_sample(kind: str):
+async def fresh_drop_sample(request: Request, kind: str):
     from fastapi.responses import Response
     from scripts.make_samples import fresh_bill
     if kind not in DROP_SAMPLES:
         raise HTTPException(404)
-    data = await asyncio.to_thread(fresh_bill, kind)
+    _sample_allowed(request)
+    data = await _render_sample(fresh_bill, kind)
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store",
                     "Content-Disposition": f"inline; filename=sample-{kind}-bill.jpg"})
 
 
 @app.get("/samples/fresh-school-bill.jpg")
-async def fresh_sample():
+async def fresh_sample(request: Request):
     from fastapi.responses import Response
     from scripts.make_samples import fresh_sample as make
-    data = await asyncio.to_thread(make)
+    _sample_allowed(request)
+    data = await _render_sample(make)
     return Response(data, media_type="image/jpeg",
                     headers={"Content-Disposition": "attachment; filename=fresh-school-bill.jpg"})
 
@@ -697,7 +714,7 @@ async def admin_home(request: Request):
             lines = []
         t["lines"] = [x for x in lines if isinstance(x, dict)] if isinstance(lines, list) else []
     return render(request, "admin.html", review=review, failed=failed, billers=billers, hooks=hooks,
-                  counts=counts, tickets=tickets, api_calls=list(reversed(client().calls[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
+                  counts=counts, tickets=tickets, api_calls=list(reversed(list(client().calls)[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
 
 
 @app.post("/admin/bills/{bill_id}/decide")

@@ -297,3 +297,39 @@ def test_shared_demo_accounts_never_show_a_visitors_paypal_login():
     html = s.get("/sponsor/agent").text
     db.run("UPDATE vault_tokens SET status = 'REPLACED' WHERE payment_token_id = 'PT-SECRET-1234'")
     assert "visitor.one@example.com" not in html and "v***@example.com" in html and "PT-SECRET" not in html
+
+
+def test_sample_bill_rendering_is_bounded(monkeypatch):
+    import asyncio as _asyncio
+    import time as _time
+    from app import main
+    from app.web import limits
+    from scripts import make_samples
+    running, peak = [0], [0]
+
+    def slow(kind):
+        running[0] += 1
+        peak[0] = max(peak[0], running[0])
+        _time.sleep(0.2)
+        running[0] -= 1
+        return b"jpeg"
+    monkeypatch.setattr(make_samples, "fresh_bill", slow)
+
+    async def burst():
+        async with httpx.AsyncClient(base_url=BASE, timeout=60) as ac:
+            return await _asyncio.gather(*[ac.get("/samples/fresh/water.jpg") for _ in range(6)])
+    assert all(r.status_code == 200 for r in _asyncio.run(burst()))
+    assert peak[0] <= main.SAMPLE_RENDERS
+    monkeypatch.setattr(limits.SAMPLES, "limit", 1)
+    limits.SAMPLES.reset()
+    c = _client()
+    assert c.get("/samples/fresh/water.jpg").status_code == 200
+    assert c.get("/samples/fresh/water.jpg").status_code == 429
+
+
+def test_paypal_call_log_keeps_only_recent_calls():
+    from app.paypal.client import PayPalClient
+    pc = PayPalClient(base_url="http://127.0.0.1:1", client_id="x", secret="y")
+    for i in range(500):
+        pc.calls.append(("GET", f"/x/{i}", 200))
+    assert len(pc.calls) == 200 and pc.calls[-1][1] == "/x/499"
