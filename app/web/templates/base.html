@@ -7,11 +7,18 @@
 <meta name="description" content="Post a bill you cannot pay. Sponsors pay the biller directly, never the person.">
 <meta name="theme-color" content="#0B1E5B">
 <meta name="csrf" content="{{ csrf }}">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/static/favicon.png" type="image/png" sizes="32x32">
-<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+<link rel="icon" href="/static/favicon.png?v=2" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=2">
+<meta property="og:site_name" content="Billkind">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="Post a bill you cannot pay. Sponsors pay the biller directly, never the person.">
+<meta property="og:image" content="{{ settings.app_base_url }}/static/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preload" href="/static/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/app.css?v=21">
+<link rel="stylesheet" href="/static/app.css?v=23">
 <script>document.documentElement.classList.add('js');</script>
 {% block head %}{% endblock %}
 </head>
@@ -42,7 +49,7 @@
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="site-header" data-role="{{ user.role if user else 'guest' }}">
   <div class="container header-row">
-    <a class="brand" href="/" aria-label="Billkind home"><img src="/static/logo.svg" alt="" width="34" height="34"><span>billkind</span></a>
+    <a class="brand" href="/" aria-label="Billkind home"><img src="/static/wordmark.svg?v=2" alt="Billkind" width="133" height="34"></a>
     {% if paypal_mode != 'sandbox' %}<span class="env-chip" title="Payments run against the built-in PayPal simulator">Demo payments</span>{% else %}<span class="env-chip" title="Real PayPal sandbox, no real money">Sandbox</span>{% endif %}
     <nav class="primary-nav" aria-label="Main">{{ navlinks() }}</nav>
     <div class="header-actions">
@@ -67,7 +74,7 @@
 <footer class="site-footer">
   <div class="container footer-grid">
     <div class="footer-brand">
-      <a class="brand on-dark" href="/"><img src="/static/logo-reverse.svg" alt="" width="34" height="34"><span>billkind</span></a>
+      <a class="brand on-dark" href="/" aria-label="Billkind home"><img src="/static/wordmark-reverse.svg?v=2" alt="Billkind" width="149" height="38"></a>
       <p>Pay a stranger's bill, straight to the biller. The money never goes to the person, so there is nothing to misuse.</p>
       <p class="footer-note">Sandbox build for the PayPal AI Hackathon. No real money moves.</p>
     </div>

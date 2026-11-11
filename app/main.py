@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -48,6 +49,9 @@ app = FastAPI(title="Billkind", lifespan=lifespan, docs_url=None, redoc_url=None
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax",
                    https_only=settings.app_base_url.startswith("https"), max_age=14 * 86400)
+# The AR model files: Scene Viewer reads the glTF type, and iOS Quick Look needs the USDZ type to open the file.
+mimetypes.add_type("model/gltf-binary", ".glb")
+mimetypes.add_type("model/vnd.usdz+zip", ".usdz")
 app.mount("/static", StaticFiles(directory=str(HERE / "web" / "static")), name="static")
 if settings.is_fake:
     app.include_router(fake.router)

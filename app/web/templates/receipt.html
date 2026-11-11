@@ -10,7 +10,7 @@
   <article class="receipt" aria-labelledby="rc-title">
     <header class="receipt-top">
       <div>
-        <span class="brand on-dark"><img src="/static/logo-reverse.svg" alt="" width="30" height="30"><span>billkind</span></span>
+        <span class="brand on-dark"><img class="screen-only" src="/static/wordmark-reverse.svg?v=2" alt="Billkind" width="134" height="34"><img class="print-only" src="/static/wordmark.svg?v=2" alt="" width="133" height="34"></span>
         <div class="receipt-amount">{{ fmt(c.amount_minor, c.currency) }}</div>
         <p class="muted" style="margin:10px 0 0;color:var(--on-dark-muted)">{% if c.refunded_minor %}{{ fmt(c.refunded_minor, c.currency) }} refunded · {% endif %}paid to {{ b.biller_name }}</p>
       </div>

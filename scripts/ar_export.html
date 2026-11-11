@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Billkind AR model export</title>
+<!-- Builds the stamped bill from app/web/static/billscene.js at real size (21.6 x 27.9 cm, lying flat, face up)
+     and exports it as glTF binary (Android Scene Viewer, model-viewer) and USDZ (iOS Quick Look).
+     Serve the repository root over HTTP (python -m http.server), open scripts/ar_export.html in a browser,
+     then read window.exported (base64 strings) or press the buttons to download. -->
+<style>@font-face { font-family: "Manrope"; font-weight: 400 800; src: url(../app/web/static/fonts/manrope-latin.woff2) format("woff2"); } body { font: 15px Manrope, sans-serif; }</style>
+<script type="importmap">{"imports": {"three": "../app/web/static/vendor/three-0.160.0/three.module.min.js"}}</script>
+</head>
+<body>
+<p id="status">Building...</p>
+<button id="glb" disabled>Download bill.glb</button> <button id="usdz" disabled>Download bill.usdz</button>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFExporter} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/exporters/GLTFExporter.js';
+import {USDZExporter} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/exporters/USDZExporter.js';
+
+await document.fonts.load('800 50px Manrope');
+await document.fonts.load('600 30px Manrope');
+const {makeBill} = await import('../app/web/static/billscene.js');
+
+const scene = new THREE.Scene();
+// Built at 10x in scene units so the layer offsets stay proportional, then scaled to metres.
+const {group, faceMat, stamp} = makeBill({W: 2.16, H: 2.79, depth: .02, stamped: true});
+faceMat.emissiveIntensity = 0;
+stamp.material.opacity = 1;
+const root = new THREE.Group(); root.name = 'StampedBill';
+group.rotation.x = -Math.PI / 2;      // lie flat, face up
+group.position.y = .021;              // paper sits on the surface
+root.add(group);
+root.scale.setScalar(.1);             // 2.16 units = 0.216 m
+scene.add(root);
+scene.updateMatrixWorld(true);
+
+const toB64 = buf => { const b = new Uint8Array(buf); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+const glb = await new GLTFExporter().parseAsync(scene, {binary: true, maxTextureSize: 1400});
+const usdz = await new USDZExporter().parse(scene, {quickLookCompatible: true});
+window.exported = {glb: toB64(glb), usdz: toB64(usdz), glbBytes: glb.byteLength, usdzBytes: usdz.byteLength};
+const dl = (data, name, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type})); a.download = name; a.click(); };
+document.getElementById('glb').onclick = () => dl(glb, 'bill.glb', 'model/gltf-binary');
+document.getElementById('usdz').onclick = () => dl(usdz, 'bill.usdz', 'model/vnd.usdz+zip');
+document.querySelectorAll('button').forEach(b => (b.disabled = false));
+document.getElementById('status').textContent = `Done: bill.glb ${glb.byteLength} bytes, bill.usdz ${usdz.byteLength} bytes.`;
+</script>
+</body>
+</html>

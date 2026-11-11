@@ -1,24 +1,20 @@
-{% extends "base.html" %}{% from "_macros.html" import billcard, ui, icon, check %}
+{% extends "base.html" %}{% from "_macros.html" import ui, icon %}
+{% block head %}<link rel="preload" href="/static/hero-still.webp?v=2" as="image" type="image/webp" fetchpriority="high">{% endblock %}
 {% block main %}
 <section class="hero" aria-labelledby="hero-title">
   <div class="container hero-grid">
     <div>
-      <span class="eyebrow">{{ ui('shield') }} Bills paid directly to the biller</span>
+      <span class="eyebrow">Bills paid straight to the biller</span>
       <h1 id="hero-title">Pay a stranger's bill. <em class="grad-text">Straight to the biller.</em></h1>
-      <p class="lead">People anywhere post a real bill they cannot pay. AI reads it and checks it. Sponsors swipe right, and PayPal sends the money to the school, clinic or utility on the bill. Never to the person.</p>
+      <p class="lead">People post real bills they can't cover. Billkind reads each one, checks it and lists it. You pay with PayPal, and the money goes to the school, clinic or utility on the bill. Never to the person.</p>
       <div class="hero-ctas">
-        <a class="btn lg" href="/login?next=/deck">Start paying bills {{ ui('arrow') }}</a>
-        <a class="btn lg secondary" href="/login?next=/post">Get help with a bill</a>
+        <a class="btn lg" href="/login?next=/deck">Pay a bill {{ ui('arrow') }}</a>
+        <a class="btn lg secondary" href="/login?next=/post">Got a bill? Drop it here</a>
       </div>
-      <div class="hero-proof">
-        <span>{{ ui('check') }} Verified billers only</span>
-        <span>{{ ui('check') }} Nine checks on every bill</span>
-        <span>{{ ui('check') }} Personal details hidden</span>
-      </div>
+      <p class="hero-trust"><strong>The money goes to the biller, never the person.</strong> Nine checks on every bill. Names, phone numbers and addresses stay hidden.</p>
     </div>
     <div class="hero-stage hero3d" id="hero3d" aria-hidden="true">
-      <img class="hero3d-still" src="/static/hero-still.webp" alt="" width="820" height="810" fetchpriority="high">
-      <div class="float-chip b"><span class="icon-tile">{{ ui('robot') }}</span><div>An agent routes the payment<small class="muted">limits enforced in code</small></div></div>
+      <img class="hero3d-still" src="/static/hero-still.webp?v=2" alt="" width="1000" height="988" fetchpriority="high">
     </div>
   </div>
 </section>
@@ -39,55 +35,38 @@
 <section class="section" aria-labelledby="how-title">
   <div class="container">
     <div class="section-head">
-      <div><span class="eyebrow">How it works</span><h2 id="how-title">Three steps from an unpaid bill to a PAID stamp.</h2></div>
-      <p class="lead">No campaign to write, no network to ask, no money handed to a stranger. A bill goes in, a verified biller gets paid, and everyone can see it happen.</p>
+      <div><span class="eyebrow">How it works</span><h2 id="how-title">Three steps. One PAID stamp.</h2></div>
+      <p class="lead">No fundraiser to write and no cash changing hands. A bill goes in, a verified biller gets paid, and you watch it happen.</p>
     </div>
-    <div class="step-cards">
-      <article class="step-card" data-reveal>
-        <span class="step-n">Step 1</span>
-        <h3>Post the bill</h3>
-        <p>Take a photo or upload the PDF. AI reads the biller, amount, due date and account number, and hides names, phone numbers and addresses.</p>
-        <div class="step-visual" aria-hidden="true">
-          <div class="scan-line w80"></div><div class="scan-line w60"></div>
-          <div class="field-read"><span>Biller</span><strong>City Water Board</strong></div>
-          <div class="field-read"><span>Amount due</span><strong class="num">42.50 USD</strong></div>
-          <div class="field-read"><span>Account</span><strong>•••• 4471</strong></div>
-        </div>
-      </article>
-      <article class="step-card" data-reveal data-reveal-delay="1">
-        <span class="step-n">Step 2</span>
-        <h3>Checked, then listed</h3>
-        <p>Nine checks run on every bill: verified biller, editing traces, two independent readings, duplicates and more. Anything unusual goes to a person.</p>
-        <div class="step-visual" aria-hidden="true">
-          <div class="check-row">{{ ui('check') }} Biller verified in the registry</div>
-          <div class="check-row">{{ ui('check') }} No editing software in the file</div>
-          <div class="check-row">{{ ui('check') }} Two readings agree on amount and date</div>
-          <div class="check-row">{{ ui('check') }} Not a duplicate of another bill</div>
-          <div class="check-row">{{ ui('check') }} Due date and amount make sense</div>
-        </div>
-      </article>
-      <article class="step-card" data-reveal data-reveal-delay="2">
-        <span class="step-n">Step 3</span>
-        <h3>Swipe right. Biller paid.</h3>
-        <p>A sponsor pays all or part with PayPal. When the bill is covered, one PayPal payout goes to the biller, and the PAID stamp and a thank-you arrive live.</p>
-        <div class="step-visual" aria-hidden="true">
-          <div class="mini-actions">
-            <span class="round pass">{{ ui('x') }}</span>
-            <span class="round pay">{{ ui('check') }}</span>
-          </div>
-          <div class="center"><span class="badge solid-ok">{{ check() }} Payout confirmed by PayPal</span></div>
-        </div>
-      </article>
-    </div>
+    <ol class="steps3d">
+      <li class="step3d" data-reveal>
+        <figure class="shot3d tilt-l"><img src="/static/landing/step-drop.webp" alt="Check what we read: biller, amount, currency and due date filled in from a dropped bill, each marked High" width="720" height="489" loading="lazy"></figure>
+        <span class="step-n">01</span>
+        <h3>Drop a bill</h3>
+        <p>Snap a photo or drop a PDF. Billkind fills in the biller, amount, due date and account number, and shows how sure it is about each one. Your name and address stay hidden.</p>
+      </li>
+      <li class="step3d" data-reveal data-reveal-delay="1">
+        <figure class="shot3d"><img src="/static/landing/step-pay.webp" alt="A verified electricity bill from Lagos in the sponsor deck, paid directly to Ikeja Grid Electricity" width="640" height="829" loading="lazy"></figure>
+        <span class="step-n">02</span>
+        <h3>A stranger pays with PayPal</h3>
+        <p>Sponsors swipe through verified bills and cover all or part of one with PayPal, in the bill's own currency.</p>
+      </li>
+      <li class="step3d" data-reveal data-reveal-delay="2">
+        <figure class="shot3d tilt-r"><img src="/static/landing/step-paid.webp" alt="Pay this bill sheet with a PAID stamp: payment captured, bill funded, payout sent, biller confirmed paid" width="520" height="638" loading="lazy"></figure>
+        <span class="step-n">03</span>
+        <h3>The biller gets paid</h3>
+        <p>Once the bill is covered, one PayPal payout goes to the biller with the account number to credit. The PAID stamp and the receipt show up live.</p>
+      </li>
+    </ol>
   </div>
 </section>
 
 <section class="section dark deep" aria-labelledby="trust-title">
   <div class="container trust">
     <div>
-      <span class="eyebrow accent">{{ ui('shield') }} The one rule</span>
+      <span class="eyebrow accent">The one rule</span>
       <h2 id="trust-title" class="display" style="font-size:clamp(40px,4.6vw,80px)">Pay the biller. Never the person.</h2>
-      <p class="lead measure">Money only moves to a biller whose PayPal account a person has verified: the school, the clinic, the utility, the landlord. The worst a dishonest poster could do is get someone's real bill paid. That removes the reason to lie.</p>
+      <p class="lead measure">Money only moves to a biller whose PayPal account a person has verified: the school, the clinic, the utility, the landlord. The worst a dishonest poster can do is get someone's real bill paid. That takes away the reason to lie.</p>
       <ul class="trust-list">
         <li>{{ ui('check') }} Verified biller registry, checked by a person</li>
         <li>{{ ui('check') }} Account numbers masked to the last four</li>
@@ -97,14 +76,42 @@
         <li>{{ ui('check') }} Every risk reason shown in plain words</li>
       </ul>
     </div>
-    <div class="flow" aria-label="Money path diagram">
-      <div class="flow-node" data-reveal><span class="icon-tile">{{ ui('heart') }}</span><div><strong>Sponsor</strong><span>Swipes right and approves in PayPal</span></div></div>
-      <div class="flow-link"><span>PayPal checkout</span></div>
-      <div class="flow-node" data-reveal data-reveal-delay="1"><span class="icon-tile">{{ ui('lock') }}</span><div><strong>Billkind</strong><span>Captures, checks the bill is covered, sends one payout</span></div></div>
-      <div class="flow-link"><span>PayPal payout with the account number</span></div>
-      <div class="flow-node biller" data-reveal data-reveal-delay="2"><span class="icon-tile">{{ ui('bank') }}</span><div><strong>Verified biller</strong><span>School, clinic, utility or landlord credits the account</span></div></div>
-      <div class="flow-node person" data-reveal data-reveal-delay="3" style="margin-top:18px"><span class="icon-tile">{{ ui('user') }}</span><div><strong>The person who posted</strong><span>Sees the PAID stamp and sends a thank-you</span></div></div>
-      <div class="flow-block">{{ ui('x') }} No money path to the person. Ever.</div>
+    <ol class="money-path" aria-label="Where the money goes">
+      <li data-reveal><span class="mp-n">1</span><div><strong>Sponsor</strong><span>Approves the payment in PayPal checkout</span></div></li>
+      <li data-reveal data-reveal-delay="1"><span class="mp-n">2</span><div><strong>Billkind</strong><span>Captures it, checks the bill is covered, sends one payout</span></div></li>
+      <li class="to-biller" data-reveal data-reveal-delay="2"><span class="mp-n">3</span><div><strong>Verified biller</strong><span>Gets the PayPal payout with the account number to credit</span></div></li>
+      <li class="no-path" data-reveal data-reveal-delay="3"><div><strong>The person who posted</strong><span>Sees the PAID stamp and sends a thank-you. There is no money path to them.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section agentic" aria-labelledby="agent-title">
+  <div class="container agentic-grid">
+    <div>
+      <span class="eyebrow">Agentic giving</span>
+      <h2 id="agent-title">Set your rules once. Your giving agent pays by them.</h2>
+      <p class="lead">Write what you want to support in plain words, like "up to 100 USD a month for school fees, never more than 40 per bill." The agent turns that into limits you confirm, pays matching bills with your saved PayPal, and logs every decision with the rule behind it.</p>
+      <ul class="agentic-points">
+        <li><strong>The AI suggests. Code decides.</strong> Budget, per-bill cap, kinds of bill and risk limit are checked in code before any money moves.</li>
+        <li><strong>Pays while you're away.</strong> PayPal Vault saves your PayPal once, so the agent can pay inside your limits. Stop it any time.</li>
+        <li><strong>Nothing hidden.</strong> Every payment, skip and block lands in the decision log.</li>
+      </ul>
+      <div class="row" style="margin-top:28px"><a class="btn lg" href="/login?next=/sponsor/agent">Set up a giving agent {{ ui('arrow') }}</a><a class="btn lg secondary" href="/login?next=/sponsor/bulk">Clear many bills at once</a></div>
+    </div>
+    <figure class="shot3d wide tilt-r" data-reveal><img src="/static/landing/agent.webp" alt="The giving agent page: active rules with a monthly budget of 100 USD and 40 USD per bill, and a decision log with a 33.14 USD payment and the bills it skipped" width="1300" height="652" loading="lazy"><figcaption>The giving agent on the hosted demo. Sandbox payments, no real money.</figcaption></figure>
+  </div>
+</section>
+
+<section class="section ar-band" aria-labelledby="ar-title" id="ar">
+  <div class="container ar-grid">
+    <div class="ar-stage" id="ar-stage">
+      <img class="ar-poster" src="/static/ar/bill-poster.webp" alt="The stamped Lakeside Power and Light bill as a 3D model" width="800" height="800" loading="lazy">
+    </div>
+    <div>
+      <span class="eyebrow">In your space</span>
+      <h2 id="ar-title">See it on your desk.</h2>
+      <p class="lead">This is the bill from the scene above, stamped PAID. Drag to turn it. On a phone, place it on a real table and walk around it.</p>
+      <p class="ar-note" id="ar-note">Open this page on an Android phone or an iPhone to see it in your room.</p>
     </div>
   </div>
 </section>
@@ -124,7 +131,7 @@
         <div class="card-head"><h3>Right now</h3><span class="badge ok"><span class="live-dot" aria-hidden="true"></span> Live</span></div>
         <ul class="feed" id="feed" aria-live="polite">
         {% for e in feed %}<li><span class="k {{ e.kind }}" aria-hidden="true"></span><div><div>{{ e.message }}</div><div class="t">{{ country_name(e.country) }}{% if e.amount_minor %} · {{ fmt(e.amount_minor, e.currency) }}{% endif %}</div></div></li>
-        {% else %}<li class="muted" id="feed-empty">Waiting for the first payment. Pay a bill and it appears here.</li>{% endfor %}
+        {% else %}<li class="muted" id="feed-empty">Waiting for the first payment. Pay a bill and it shows up here.</li>{% endfor %}
         </ul>
       </div>
     </div>
@@ -134,14 +141,13 @@
 <section class="section vault dark" aria-labelledby="big-title">
   <div class="container vault-grid">
     <div>
-      <div class="gold-rule" aria-hidden="true"></div>
       <span class="eyebrow accent">Big-sponsor mode</span>
       <h2 id="big-title" class="display" style="font-size:clamp(40px,4.4vw,76px)">Clear a whole city's bills in one checkout.</h2>
-      <p class="lead measure">Say it in a sentence. Billkind finds every matching verified bill, you approve one PayPal payment, and each biller receives its own payout with its own receipt. Generosity at scale, with the same proof as a single swipe.</p>
-      <div class="row" style="margin-top:28px"><a class="btn lg light" href="/login?next=/sponsor/bulk">Try big-sponsor mode</a><a class="btn lg outline-light" href="/login?next=/sponsor/agent">Set up a giving agent</a></div>
+      <p class="lead measure">Say it in a sentence. Billkind finds every matching verified bill, you approve one PayPal payment, and each biller gets its own payout and its own receipt.</p>
+      <div class="row" style="margin-top:28px"><a class="btn lg light" href="/login?next=/sponsor/bulk">Try big-sponsor mode</a></div>
     </div>
     <div class="command" data-reveal>
-      <div class="command-input">{{ ui('spark') }} Clear the bills due soonest</div>
+      <div class="command-input">Clear the bills due soonest</div>
       <div class="command-rows">
         {% for c in cards %}<div class="command-row">{{ icon(c.category) }}<div><strong>{{ c.category_label }}, {{ c.city or c.country_name }}</strong><span>Paid to {{ c.biller }} · {{ c.due }}</span></div><strong class="num">{{ c.settle_amount }}</strong></div>{% endfor %}
       </div>
@@ -153,40 +159,26 @@
 <section class="section" aria-labelledby="more-title">
   <div class="container">
     <div class="section-head">
-      <div><span class="eyebrow">Built in, not bolted on</span><h2 id="more-title">Giving that runs itself, with limits written in code.</h2></div>
-      <p class="lead">AI does the reading, the matching and the answering. Code decides whether money can move. Every feature has a plain fallback, and no AI output alone can pay anyone.</p>
+      <div><span class="eyebrow">Also built in</span><h2 id="more-title">People stay in the loop.</h2></div>
+      <p class="lead">AI reads, matches and answers. Code decides whether money can move, every feature has a plain fallback, and no AI output alone can pay anyone.</p>
     </div>
-    <div class="grid cols-3">
+    <div class="grid cols-2">
       <article class="feature" data-reveal>
-        <span class="icon-tile dark">{{ ui('robot') }}</span>
-        <h3>A giving agent with hard caps</h3>
-        <p>Write your rules in plain words. The agent turns them into limits you confirm, pays matching bills with your saved PayPal, and explains every choice.</p>
-        <div class="demo" aria-label="Example limits and decisions">
-          <span class="example-tag">Example</span>
-          <div class="limit-row"><span>Monthly budget</span><strong>100 USD</strong></div>
-          <div class="limit-row"><span>Most per bill</span><strong>40 USD</strong></div>
-          <div class="log-row"><span class="badge ok">paid</span> School fees, within every limit</div>
-          <div class="log-row"><span class="badge danger">blocked</span> Rent is not a kind you chose</div>
-        </div>
-      </article>
-      <article class="feature" data-reveal data-reveal-delay="1">
-        <span class="icon-tile">{{ ui('chat') }}</span>
         <h3>Support that reads your records</h3>
-        <p>Ask where your bill is or whether the school got the money. The assistant answers only from your own records and PayPal order details, and hands off to a person when it is unsure.</p>
+        <p>Ask where your bill is or whether the school got the money. The assistant answers only from your own records and PayPal order details, and hands off to a person when it isn't sure.</p>
         <div class="demo" aria-label="Example support conversation">
           <span class="example-tag">Example</span>
           <div class="bubble me">Did the school get my money?</div>
           <div class="bubble bot">Yes. The payout to the school's PayPal account is confirmed, and your receipt is in your inbox.<small>Checked against your records</small></div>
         </div>
       </article>
-      <article class="feature" data-reveal data-reveal-delay="2">
-        <span class="icon-tile accent">{{ ui('flag') }}</span>
-        <h3>People in the loop</h3>
-        <p>Risky bills wait for a reviewer with every reason listed and the original document beside them. Billers see each payout with the customer account number to credit.</p>
+      <article class="feature" data-reveal data-reveal-delay="1">
+        <h3>A reviewer for anything unusual</h3>
+        <p>Risky bills wait for a person, with every reason listed and the original document alongside. Billers see each payout with the customer account number to credit.</p>
         <div class="demo" aria-label="Example review reasons">
           <span class="example-tag">Example</span>
           <div class="reason"><b>+30</b><span>File saved by photo-editing software</span></div>
-          <div class="reason"><b>+20</b><span>Line items do not add up to the total</span></div>
+          <div class="reason"><b>+20</b><span>Line items don't add up to the total</span></div>
           <div class="log-row"><span class="badge warn">In human review</span></div>
         </div>
       </article>
@@ -198,7 +190,7 @@
   <div class="container">
     <div class="section-head" style="margin-bottom:0">
       <div><span class="eyebrow">Why bills</span><h2 id="why-title">Small bills never get a campaign.</h2></div>
-      <p class="lead">A 60 dollar power bill has no story arc and no network behind it, so it is never posted, and the power is cut. Paying the biller directly fixes both problems.</p>
+      <p class="lead">A 60 dollar power bill has no story arc and no network behind it, so it never gets posted, and the power gets cut. Paying the biller directly fixes both.</p>
     </div>
     <div class="facts" style="margin-top:clamp(28px,3vw,48px)">
       <div class="fact" data-reveal><div class="stat-value num">37%</div><p>of US adults would not cover a 400 USD emergency expense with cash.</p><small>Federal Reserve, Economic Well-Being of U.S. Households in 2025</small></div>
@@ -214,18 +206,49 @@
       <span class="eyebrow" style="color:var(--on-dark-link)">For sponsors</span>
       <h2>See exactly what your money did.</h2>
       <p>Swipe through verified bills from around the world, pay with PayPal in the bill's own currency, and watch the PAID stamp, the receipt and the thank-you arrive.</p>
-      <a class="btn lg light" href="/login?next=/deck">Start paying bills {{ ui('arrow') }}</a>
+      <a class="btn lg light" href="/login?next=/deck">Pay a bill {{ ui('arrow') }}</a>
     </div>
     <div class="cta-card poster" data-reveal data-reveal-delay="1">
       <span class="eyebrow accent">For people with a bill</span>
-      <h2>Ask for help with dignity.</h2>
-      <p>Post one bill in a minute. Your name, phone number and address are never shown, and you never have to handle the money. You only see it paid.</p>
-      <a class="btn lg dark" href="/login?next=/post">Post a bill</a>
+      <h2>Got a bill you can't cover? Drop it here.</h2>
+      <p>Post one bill in a minute. Your name, phone number and address never show, and you never handle the money. You just see it paid.</p>
+      <a class="btn lg dark" href="/login?next=/post">Drop a bill</a>
     </div>
   </div>
 </section>
 {% endblock %}
 {% block scripts %}
+<script>
+/* AR moment: Google's model-viewer (vendored, 4.0.0) loads only when this section comes near the screen.
+   Android opens Scene Viewer, iPhone opens Quick Look with the USDZ. model-viewer shows the slotted button
+   only where AR can start, so desktops get the 3D viewer without it. */
+(() => {
+  const stage = document.getElementById('ar-stage');
+  if (!stage || !('IntersectionObserver' in window)) return;
+  const build = () => {
+    const mv = document.createElement('model-viewer');
+    const set = {src: '/static/ar/bill.glb?v=1', 'ios-src': '/static/ar/bill.usdz?v=1', poster: '/static/ar/bill-poster.webp',
+      alt: 'A 3D model of the Lakeside Power and Light bill, stamped PAID', ar: '', 'ar-modes': 'webxr scene-viewer quick-look',
+      'ar-placement': 'floor', 'camera-controls': '', 'touch-action': 'pan-y', 'shadow-intensity': '1', 'shadow-softness': '.8',
+      'auto-rotate': '', 'rotation-per-second': '14deg', 'interaction-prompt': 'none', 'camera-orbit': '15deg 50deg 108%',
+      'environment-image': 'neutral', exposure: '1.05', id: 'bill-model'};
+    Object.entries(set).forEach(([k, v]) => mv.setAttribute(k, v));
+    mv.innerHTML = '<button slot="ar-button" class="btn lg ar-btn" type="button">See it on your desk</button>';
+    mv.addEventListener('load', () => {
+      stage.classList.add('ready');
+      if (mv.canActivateAR) { const n = document.getElementById('ar-note'); if (n) n.hidden = true; }
+    });
+    stage.appendChild(mv);
+  };
+  const io = new IntersectionObserver(es => {
+    if (!es.some(e => e.isIntersecting)) return;
+    io.disconnect();
+    const s = document.createElement('script'); s.type = 'module'; s.src = '/static/vendor/model-viewer-4.0.0/model-viewer.min.js';
+    s.onload = build; document.head.appendChild(s);
+  }, {rootMargin: '400px 0px'});
+  io.observe(stage);
+})();
+</script>
 <script>
 /* 3D hero: loaded after the page is interactive, only with WebGL and without data saver; the still stays otherwise. */
 (() => {
@@ -236,7 +259,7 @@
         const lose = gl && gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (e) { ok = false; }
   const conn = navigator.connection;
   if (!ok || (conn && (conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')))) return;
-  const start = () => import('/static/hero3d.js?v=1').then(m => m.mount(el)).catch(() => {});
+  const start = () => import('/static/hero3d.js?v=2').then(m => { window.BKHero = m.mount(el); }).catch(() => {});
   const go = () => ('requestIdleCallback' in window ? requestIdleCallback(start, {timeout: 1500}) : setTimeout(start, 400));
   if (document.readyState === 'complete') go(); else addEventListener('load', go, {once: true});
 })();

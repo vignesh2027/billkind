@@ -922,6 +922,8 @@ details.policy p { font-size: 14.5px; color: var(--text-muted); margin: 0 0 14px
   .receipt { box-shadow: none; border: 1px solid #999; }
   .receipt-top { background: #fff !important; color: #000 !important; border-bottom: 2px solid #000; }
   .receipt-top .brand, .receipt-top .muted { color: #000 !important; }
+  .screen-only { display: none !important; }
+  .print-only { display: block !important; }
 }
 
 /* ---------- Error ---------- */
@@ -1006,8 +1008,10 @@ body { background: var(--surface); }
 body.app { background: var(--bg) var(--grad-sky) no-repeat; background-attachment: fixed; }
 .grad-text { background: linear-gradient(100deg, #1463FF 10%, #22C7F2 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .brand { color: var(--navy); letter-spacing: -0.045em; font-weight: 800; font-style: normal; }
-.brand img { border-radius: 10px; box-shadow: 0 6px 16px rgba(20, 99, 255, .28); }
-.brand.on-dark img { box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+.brand img { display: block; width: auto; height: 34px; border-radius: 0; box-shadow: none; }
+.site-footer .brand img { height: 38px; }
+.receipt-top .brand img { height: 34px; }
+@media screen { .print-only { display: none !important; } }
 .site-header { background: rgba(255, 255, 255, .78); border-bottom-color: rgba(181, 202, 235, .55); }
 .env-chip { color: var(--accent-ink); background: var(--accent-soft); }
 .primary-nav a[aria-current="page"] { background: var(--primary-soft); color: var(--primary-hover); }
@@ -1181,3 +1185,57 @@ body:not(.app) .page-head { background: var(--surface); }
 .legend-dot.open { background: transparent; border: 2px solid #5B8CFF; }
 .map circle.open { fill: rgba(91, 140, 255, .14); stroke: #5B8CFF; stroke-width: 1.5; }
 .map circle.paid { fill: #22C7F2; stroke: #E2F8FE; stroke-width: 1.5; filter: drop-shadow(0 0 6px rgba(34, 199, 242, .8)); }
+
+/* =====================================================================
+   Landing, Nov 2026 brand pass: real screens in 3D frames, the money path,
+   agentic giving and the AR viewer. No decorative icon tiles.
+   ===================================================================== */
+.hero-trust { margin: 26px 0 0; max-width: 46ch; color: var(--text-muted); font-size: 15px; line-height: 1.6; }
+.hero-trust strong { color: var(--navy); }
+
+.steps3d { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 2.4vw, 44px); perspective: 1400px; }
+.step3d { display: flex; flex-direction: column; gap: 10px; }
+.step3d .step-n { font-size: 13px; font-weight: 800; letter-spacing: .12em; color: var(--primary); margin-top: 14px; }
+.step3d h3 { font-size: clamp(22px, 1.8vw, 30px); letter-spacing: -0.03em; margin: 0; }
+.step3d p { color: var(--text-muted); margin: 0; }
+.shot3d { margin: 0; position: relative; border-radius: 22px; padding: 10px; background: linear-gradient(160deg, rgba(255, 255, 255, .9), rgba(214, 230, 255, .7)); border: 1px solid rgba(255, 255, 255, .95);
+  box-shadow: 0 1px 0 #fff inset, 0 30px 60px -20px rgba(11, 30, 91, .28), 0 12px 30px rgba(20, 99, 255, .10);
+  transform: rotateX(8deg) rotateY(0deg); transform-origin: 50% 100%; transition: transform .6s cubic-bezier(.2, .7, .2, 1), box-shadow .6s; }
+.shot3d.tilt-l { transform: rotateX(8deg) rotateY(10deg); }
+.shot3d.tilt-r { transform: rotateX(8deg) rotateY(-10deg); }
+.shot3d:hover { transform: rotateX(0) rotateY(0) translateY(-4px); box-shadow: 0 1px 0 #fff inset, 0 40px 80px -24px rgba(11, 30, 91, .32), 0 16px 40px rgba(20, 99, 255, .14); }
+.shot3d img { display: block; width: 100%; height: clamp(240px, 22vw, 330px); object-fit: cover; object-position: top center; border-radius: 14px; background: #fff; }
+.shot3d.wide img { height: auto; }
+.shot3d figcaption { font-size: 13px; color: var(--text-muted); padding: 10px 6px 2px; }
+@media (max-width: 1000px) { .steps3d { grid-template-columns: minmax(0, 1fr); max-width: 560px; } }
+@media (prefers-reduced-motion: reduce) { .shot3d, .shot3d.tilt-l, .shot3d.tilt-r { transform: none; transition: none; } }
+
+.money-path { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; position: relative; }
+.money-path li { position: relative; display: flex; gap: 18px; align-items: flex-start; padding: 22px 22px; border-radius: 18px; background: var(--glass); border: 1px solid var(--line-dark); margin-bottom: 26px; }
+.money-path li:not(:last-child)::after { content: ""; position: absolute; left: 41px; bottom: -27px; height: 26px; width: 2px; background: linear-gradient(#7FD8F7, rgba(127, 216, 247, .2)); }
+.money-path .mp-n { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #061238; background: linear-gradient(135deg, #7FD8F7, #1463FF); box-shadow: 0 0 0 6px rgba(127, 216, 247, .12); }
+.money-path strong { display: block; font-size: 18px; }
+.money-path span:not(.mp-n) { color: var(--on-dark-muted); font-size: 14.5px; }
+.money-path .to-biller { background: rgba(63, 203, 142, .12); border-color: rgba(63, 203, 142, .45); }
+.money-path .to-biller .mp-n { background: linear-gradient(135deg, #7BE0B2, #1F9D6A); }
+.money-path .no-path { border-style: dashed; background: transparent; margin-left: 58px; }
+.money-path li.to-biller::after { display: none; }
+
+.agentic { background: radial-gradient(800px 500px at 85% 30%, rgba(34, 199, 242, .12), transparent 65%), var(--surface); }
+.agentic-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(32px, 4vw, 80px); align-items: center; perspective: 1600px; }
+.agentic h2 { font-size: clamp(34px, 3.4vw, 56px); letter-spacing: -0.04em; line-height: 1.02; margin: 12px 0 18px; }
+.agentic-points { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 14px; }
+.agentic-points li { padding-left: 18px; border-left: 3px solid var(--primary-soft); color: var(--text-muted); }
+.agentic-points strong { color: var(--navy); display: block; }
+@media (max-width: 1000px) { .agentic-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.ar-band { background: linear-gradient(180deg, #FFFFFF, #EEF5FF); }
+.ar-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: clamp(32px, 4vw, 80px); align-items: center; }
+.ar-grid h2 { font-size: clamp(36px, 3.8vw, 64px); letter-spacing: -0.045em; line-height: 1; margin: 12px 0 18px; }
+.ar-stage { position: relative; aspect-ratio: 1 / 1; max-height: 560px; width: 100%; border-radius: 32px; background: radial-gradient(closest-side, rgba(127, 216, 247, .28), rgba(20, 99, 255, .05) 70%, transparent), linear-gradient(160deg, #F7FAFF, #E3EEFF); border: 1px solid rgba(181, 202, 235, .6); overflow: hidden; }
+.ar-stage .ar-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: opacity .5s; }
+.ar-stage.ready .ar-poster { opacity: 0; }
+.ar-stage model-viewer { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; --poster-color: transparent; }
+.ar-btn { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); white-space: nowrap; box-shadow: 0 14px 30px rgba(20, 99, 255, .35); }
+.ar-note { color: var(--text-muted); font-size: 15px; padding: 14px 16px; border-radius: 14px; background: var(--primary-soft); display: inline-block; }
+@media (max-width: 1000px) { .ar-grid { grid-template-columns: minmax(0, 1fr); } .ar-grid > div:last-child { order: -1; } }
