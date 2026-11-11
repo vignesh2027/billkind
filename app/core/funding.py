@@ -762,6 +762,8 @@ def thank(bill_id: str, poster_id: str, text: str) -> dict:
         raise FundingError("not your bill")
     if bill["status"] != "PAID":
         raise FundingError("thank-you notes open once the biller is paid")
+    if bill["thank_you"]:
+        raise FundingError("a thank-you was already sent for this bill")
     db.update("bills", "id", bill_id, thank_you=text)
     for sid in _sponsors(bill_id):
         notify.send(sid, "thanks", "A thank-you from the household you helped", text, bill_id=bill_id)

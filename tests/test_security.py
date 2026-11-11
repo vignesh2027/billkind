@@ -128,3 +128,29 @@ def test_pages_cannot_be_framed_by_other_sites():
     assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+
+def test_thank_you_note_is_scrubbed_of_the_bills_details_and_sent_once():
+    import json as _json
+    from tests.conftest import login
+    template = db.one("SELECT * FROM bills WHERE id = 'BK-S009'")
+    ext = dict(_json.loads(template["extraction"] or "{}"), customer_name="Aarav Menon",
+               service_address="12 Lake View Road")
+    db.insert("bills", dict(template, id="BK-THX01", poster_id="U-P01", status="PAID", thank_you="",
+                            account_private="KV-88213", extraction=_json.dumps(ext), paid_at=db.now(),
+                            created_at=db.now(), updated_at=db.now()))
+    db.insert("contributions", {"id": "CON-THX01", "bill_id": "BK-THX01", "sponsor_id": "U-SPONSOR",
+                                "amount_minor": 100, "currency": "USD", "status": "CAPTURED", "source": "swipe",
+                                "group_id": "GRP-THX01", "expires_at": 0, "created_at": db.now(),
+                                "captured_at": db.now()})
+    p, csrf = login("poster01@billkind.demo")
+    p.post("/me/BK-THX01/thanks", data={"csrf": csrf, "text": "Thank you! Aarav can sit his exams, roll KV 88213. "
+                                                               "GPay amma@okaxis if you want to help more."})
+    note = db.one("SELECT thank_you FROM bills WHERE id = 'BK-THX01'")["thank_you"]
+    assert note and "Aarav" not in note and "88213" not in note and "okaxis" not in note, note
+    sent = db.one("SELECT COUNT(*) AS n FROM messages WHERE kind = 'thanks' AND bill_id = 'BK-THX01'")["n"]
+    assert sent == 1
+    p.post("/me/BK-THX01/thanks", data={"csrf": csrf, "text": "Second note"})
+    assert db.one("SELECT thank_you FROM bills WHERE id = 'BK-THX01'")["thank_you"] == note
+    assert db.one("SELECT COUNT(*) AS n FROM messages WHERE kind = 'thanks' AND bill_id = 'BK-THX01'")["n"] == 1
+    assert db.one("SELECT COUNT(*) AS n FROM events WHERE kind = 'thanks' AND bill_id = 'BK-THX01'")["n"] == 1
