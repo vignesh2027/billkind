@@ -1,4 +1,4 @@
-<img src="app/web/static/logo-512.png" alt="Billkind logo: a bill with a check cut into it on a navy to cyan tile" width="76">
+<img src="docs/brand/wordmark.svg" alt="Billkind logo: a bold italic B made of two overlapping layers, navy behind and blue to cyan in front, next to the BillKind wordmark" height="56">
 
 # Billkind
 
@@ -35,10 +35,21 @@ What it gives the rest of the app: sponsor cards show **Read from the bill** whe
 
 | | |
 |---|---|
-| <img src="docs/screenshots/v2/hero-1440.png" alt="Landing page with the 3D hero: a bill stamped PAID while the giving agent routes the payment from the sponsor to the biller" width="420"> | <img src="docs/screenshots/v2/deck-1440.png" alt="Sponsor deck: a verified water bill from Nairobi with the money path you, PayPal, the biller" width="420"> |
-| **Landing page.** A small 3D scene: the giving agent carries the payment, the bill is stamped PAID, the biller is paid. | **Swipe deck.** Verified bills, most urgent first, paid straight to the biller. |
+| <img src="docs/screenshots/v3/landing-1440.png" alt="Landing page: Pay a stranger's bill. Straight to the biller. Beside it a 3D scene of a bill on a glass reader, the fields it read, the sponsor's card and the biller" width="420"> | <img src="docs/screenshots/v2/deck-1440.png" alt="Sponsor deck: a verified water bill from Nairobi with the money path you, PayPal, the biller" width="420"> |
+| **Landing page.** The real flow in 3D: a bill drops onto a glass reader, the fields it read slide out, a PayPal payment travels from the sponsor to the biller and the bill is stamped PAID. | **Swipe deck.** Verified bills, most urgent first, paid straight to the biller. |
 | <img src="docs/screenshots/v2/agent-1440.png" alt="Giving agent: limits enforced in code and a decision log with paid, clamped, skipped and blocked entries" width="420"> | <img src="docs/screenshots/v2/drop-done-1440.png" alt="Check what we read: every field pre-filled with High, Check or Fix and the reason" width="420"> |
 | **Giving agent.** Plain-words rules become hard limits; every decision is logged. | **Check what we read.** Each field with its confidence and the reason. |
+
+## Landing page, AR and brand
+
+| | |
+|---|---|
+| <img src="docs/screenshots/v3/steps-1440.png" alt="Three steps. One PAID stamp: real screens of drop a bill, the sponsor deck and the paid sheet in tilted glass frames" width="420"> | <img src="docs/screenshots/v3/agentic-1440.png" alt="Agentic giving: set your rules once, the giving agent pays by them, with a screenshot of the agent's rules and decision log" width="420"> |
+| **Three steps.** Drop a bill, a stranger pays with PayPal, the biller gets paid, each shown with a real screen from the app. | **Agentic giving.** Rules in plain words, limits checked in code, every decision logged. |
+| <img src="docs/screenshots/v3/ar-390.png" alt="See it on your desk: the stamped bill in a 3D viewer on a phone with the AR button" width="200"> | <img src="docs/brand/brand-card.png" alt="Brand card: the B monogram, the BillKind wordmark, the line Pay, Bill, Receive, Manage and a pill of card, bank, send and wallet icons on a white and pale blue ground" width="420"> |
+| **See it on your desk.** The same stamped bill as a 3D model (Google model-viewer 4.0.0, vendored). On Android the button opens Scene Viewer, on iPhone it opens Quick Look with a USDZ; it only appears where AR can start, so desktops get the 3D viewer alone. | **Brand.** Two overlapping rounded italic B shapes, navy behind and blue to cyan in front. Files in [docs/brand](docs/brand), made by [scripts/brand_assets.py](scripts/brand_assets.py). |
+
+The hero is three.js r160, loaded after the page is interactive and only with WebGL; a still image shows first and stays for reduced motion or data saver. The AR files (`bill.glb`, 135 KB, and `bill.usdz`, 240 KB) are exported from the same bill model the hero uses ([app/web/static/billscene.js](app/web/static/billscene.js)) by [scripts/ar_export.html](scripts/ar_export.html), at real size (21.6 by 27.9 cm). The USDZ was checked by loading it in Apple's SceneKit on macOS; it has not been opened on a physical iPhone.
 
 ## Try it in two minutes
 
@@ -200,7 +211,7 @@ Without a reachable webhook URL (for example on localhost), Billkind still compl
 .venv/bin/python -m pytest -q
 ```
 
-84 tests run in about fifteen seconds against a real HTTP server and the PayPal fake (83 run by default; the 84th is the opt-in contract test against the real sandbox, described below). They cover drop a bill (file type and size checks, the PDF page cap, EXIF, GPS and PDF metadata removed from stored copies, parsing and cleaning the model's output, validation against the bill rules, confidence from two readings and the registry, account redaction, the scan endpoint with the model mocked through to a listed bill, refusals, the per-poster limit, the no-AI fallback, fresh samples, and what the giving agent sees), money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, the demo upkeep (re-listed bills and budget renewal, never outside the sandbox), monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
+88 tests run in about fifteen seconds against a real HTTP server and the PayPal fake (87 run by default; the 88th is the opt-in contract test against the real sandbox, described below). They cover the landing page, brand files and AR model files (served types, glTF header, size), drop a bill (file type and size checks, the PDF page cap, EXIF, GPS and PDF metadata removed from stored copies, parsing and cleaning the model's output, validation against the bill rules, confidence from two readings and the registry, account redaction, the scan endpoint with the model mocked through to a listed bill, refusals, the per-poster limit, the no-AI fallback, fresh samples, and what the giving agent sees), money handling, both state machines, webhook signature verification (tampered body, wrong webhook ID, look-alike certificate domains), every fraud rule, the full swipe-to-payout flow, pooled funding, the overfunding hold, late-capture refunds, withdrawal refunds, unclaimed payouts with admin refunds, bulk checkout with one payout batch, forged and replayed webhooks, giving-agent caps when the model overreaches, the demo upkeep (re-listed bills and budget renewal, never outside the sandbox), monthly sponsorship, support grounding and escalation, Impact studio data scoping and the Studio agent round trip, and contract tests that run every PayPal call through both the APIMatic SDK and plain REST. `PAYPAL_CONTRACT_SANDBOX=1` adds a contract test against the real sandbox, and `python -m scripts.sandbox_check <receiver email>` checks orders in six currencies, Vault and payouts on a sandbox app.
 
 ### Deploy
 
@@ -217,8 +228,10 @@ app/
   core/              state machines, funding and payouts, posting, billers, events (SSE), automation, jobs
   ai/                intake, drop a bill (confidence and validation), fraud, redaction, notes, matching,
                      bulk filter, giving agent, support assistant
-  web/               Jinja templates, CSS, pay.js, the 3D landing hero (hero3d.js, three.js r160 vendored)
-scripts/             seed data and the sample bill generator
+  web/               Jinja templates, CSS, pay.js, the 3D landing hero (hero3d.js and billscene.js, three.js r160
+                     vendored), the AR bill (static/ar, model-viewer 4.0.0 vendored), brand files
+scripts/             seed data, the sample bill generator, brand_assets.py (logo and wordmark SVGs) and
+                     ar_export.html (exports the AR bill as GLB and USDZ)
 samples/             fictional sample bills
 tests/               unit, integration and contract tests
 DESIGN.md            problem, audience, safety model, state machines, path to production
