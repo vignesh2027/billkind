@@ -6,6 +6,7 @@ import datetime as dt
 import json
 
 from .. import db
+from ..ai import dropbill
 from ..ai.intake import CATEGORY_LABELS
 from ..core import funding, states
 from ..core.money import convert, fmt
@@ -68,6 +69,11 @@ def card(bill: dict, viewer_currency: str = "USD") -> dict:
     reasons = json.loads(bill.get("risk_reasons") or "[]")
     biller = db.one("SELECT verified FROM billers WHERE id = ?", (bill["biller_id"],)) if bill["biller_id"] else None
     d = days_to(bill["due_date"])
+    try:
+        ext = json.loads(bill.get("extraction") or "{}")
+    except ValueError:
+        ext = {}
+    doc = dropbill.document_check(ext, bool(biller and biller["verified"]))
     return {
         "id": bill["id"], "status": bill["status"], "status_label": states.BILL_LABELS.get(bill["status"], bill["status"]),
         "category": bill["category"], "category_label": category_label(bill["category"]),
@@ -83,6 +89,8 @@ def card(bill: dict, viewer_currency: str = "USD") -> dict:
         "account": bill["account_masked"], "risk": bill["risk_score"],
         "checks": max(0, 9 - len([r for r in reasons if r.get("points", 0) >= 10])), "fx_note": bill["fx_note"],
         "thank_you": bill["thank_you"], "paid": bill["status"] == "PAID",
+        "doc_confirmed": doc["amount_confirmed"], "doc_summary": doc["summary"],
+        "service_period": ext.get("service_period") or "",
         "sponsors": db.one("SELECT COUNT(DISTINCT sponsor_id) AS n FROM contributions WHERE bill_id = ? AND "
                            "status IN ('CAPTURED','PARTIALLY_REFUNDED')", (bill["id"],))["n"],
     }

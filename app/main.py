@@ -216,23 +216,68 @@ async def inbox(request: Request):
 
 # Poster --------------------------------------------------------------------------------
 
+SCAN_LIMIT = (8, 600)  # at most 8 bill readings per poster in 10 minutes (keeps the free AI tier for everyone)
+
+
 @app.get("/post", response_class=HTMLResponse)
 async def post_page(request: Request):
     auth.require(request, "poster")
     samples = sorted(p.name for p in (HERE.parent / "samples").glob("*") if p.suffix in (".jpg", ".png", ".pdf"))
-    return render(request, "post.html", error="", samples=samples)
+    return render(request, "post.html", error="", samples=samples, drop_samples=DROP_SAMPLES,
+                  categories=CATEGORY_LABELS)
 
 
 @app.post("/post")
 async def post_upload(request: Request, file: UploadFile = File(...), csrf: str = Form(""), device: str = Form("")):
+    """No-JavaScript path: upload, then check the reading on its own page."""
     user = auth.require(request, "poster")
     auth.check_csrf(request, csrf)
-    data = await file.read()
+    data = await file.read(posting.intake.MAX_BYTES + 1)
     try:
         bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
     except posting.PostingError as exc:
-        return render(request, "post.html", error=str(exc), samples=[])
+        return render(request, "post.html", error=str(exc), samples=[], drop_samples=DROP_SAMPLES,
+                      categories=CATEGORY_LABELS)
     return RedirectResponse(f"/post/{bill['id']}", status_code=303)
+
+
+@app.post("/api/post/scan")
+async def post_scan(request: Request, file: UploadFile = File(...), device: str = Form("")):
+    """Drop a bill: read one photo or PDF and return the pre-filled form with a confidence level per field.
+
+    Creates a DRAFT bill that only its poster can see. Nothing is listed until the poster confirms on
+    POST /post/{bill_id}, which runs the same nine checks as before.
+    """
+    user = auth.require(request, "poster")
+    auth.check_csrf(request, request.headers.get("x-csrf"))
+    recent = db.one("SELECT COUNT(*) AS n FROM bills WHERE poster_id = ? AND created_at > ?",
+                    (user["id"], db.now() - SCAN_LIMIT[1]))["n"]
+    if recent >= SCAN_LIMIT[0]:
+        return JSONResponse({"error": "That is a lot of bills in a few minutes. Please wait a little and try again."},
+                            status_code=429)
+    data = await file.read(posting.intake.MAX_BYTES + 1)
+    try:
+        bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
+    except posting.PostingError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return posting.scan_view(bill)
+
+
+# "Try a sample bill": fictional bills generated fresh on every request (new account number, amount and due date),
+# so a tester never trips the duplicate checks.
+DROP_SAMPLES = {"electricity": "Electricity bill, Detroit", "school": "School fee receipt, Chennai",
+                "water": "Water bill, Leeds", "clinic": "Clinic bill, Tampa"}
+
+
+@app.get("/samples/fresh/{kind}.jpg")
+async def fresh_drop_sample(kind: str):
+    from fastapi.responses import Response
+    from scripts.make_samples import fresh_bill
+    if kind not in DROP_SAMPLES:
+        raise HTTPException(404)
+    data = await asyncio.to_thread(fresh_bill, kind)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store",
+                    "Content-Disposition": f"inline; filename=sample-{kind}-bill.jpg"})
 
 
 @app.get("/samples/fresh-school-bill.jpg")
@@ -262,7 +307,8 @@ async def post_review(request: Request, bill_id: str):
         return RedirectResponse(f"/me#{bill_id}", status_code=303)
     ext = json.loads(bill["extraction"])
     return render(request, "review.html", bill=bill, ext=ext, error="", form={},
-                  amount=(ext.get("amount") or ""), categories=CATEGORY_LABELS)
+                  amount=(ext.get("amount") or ""), categories=CATEGORY_LABELS,
+                  conf=ext.get("confidence_levels") or {})
 
 
 @app.post("/post/{bill_id}")
@@ -277,7 +323,8 @@ async def post_submit(request: Request, bill_id: str):
         if not bill:
             raise HTTPException(404)
         return render(request, "review.html", bill=bill, ext=json.loads(bill["extraction"]), error=str(exc),
-                      form=form, amount=form.get("amount", ""), categories=CATEGORY_LABELS)
+                      form=form, amount=form.get("amount", ""), categories=CATEGORY_LABELS,
+                      conf=json.loads(bill["extraction"]).get("confidence_levels") or {})
     return RedirectResponse(f"/me?posted={bill['id']}#{bill['id']}", status_code=303)
 
 

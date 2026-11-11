@@ -16,7 +16,7 @@ from decimal import Decimal
 from .. import db
 from ..core import funding, states
 from ..core.money import USD_RATES, convert, fmt, to_minor
-from . import llm
+from . import dropbill, llm
 from .intake import CATEGORIES, CATEGORY_LABELS
 
 MAX_MONTHLY_USD = 5000
@@ -150,10 +150,18 @@ def eligibility(bill: dict, policy: dict, sponsor_id: str) -> str | None:
     return None
 
 
+def _verified(bill: dict) -> bool:
+    row = db.one("SELECT verified FROM billers WHERE id = ?", (bill["biller_id"],)) if bill.get("biller_id") else None
+    return bool(row and row["verified"])
+
+
 AGENT_SYSTEM = """You are a giving agent that pays household bills for a sponsor. The money goes to the biller,
 never to the person. You will get the sponsor's rules, the remaining monthly budget, and candidate bills that already
 pass the rules. Choose which to pay and how much (in USD), most urgent and most clearly helpful first. Prefer covering
-a bill completely when the budget allows. Give one short plain reason per decision, no names.
+a bill completely when the budget allows. Each candidate also says what its bill document confirms ("document"):
+the biller, and whether the amount and due date were read from the uploaded bill and confirmed by two independent
+readings. When bills are otherwise alike, prefer the ones the document confirms. Give one short plain reason per
+decision, no names, and do not claim anything the candidate data does not say.
 Return JSON: {"decisions": [{"bill_id": "...", "action": "pay" or "skip", "amount_usd": number, "reason": "..."}]}"""
 
 
@@ -200,8 +208,10 @@ async def run(agent_row: dict, *, limit: int = 8) -> dict:
         log(b["id"], "skipped", f"Not eligible: {rule}.", rule)
 
     cand = [{"bill_id": b["id"], "category": b["category"], "country": b["country"], "city": b["city"],
+             "biller": b["biller_name"], "due_date": b["due_date"],
              "needs_usd": float(_usd(funding.remaining(b), b["settle_currency"])),
-             "due_in_days": (dt.date.fromisoformat(b["due_date"]) - dt.date.today()).days, "story": b["story"][:200]}
+             "due_in_days": (dt.date.fromisoformat(b["due_date"]) - dt.date.today()).days, "story": b["story"][:200],
+             "document": dropbill.document_check(json.loads(b["extraction"] or "{}"), _verified(b))["summary"]}
             for b in eligible]
     proposals = None
     if cand:

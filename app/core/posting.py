@@ -9,7 +9,7 @@ import random
 from pathlib import Path
 
 from .. import db
-from ..ai import fraud, intake, redact, story
+from ..ai import dropbill, fraud, intake, redact, story
 from ..config import settings
 from . import billers, events, notify, states
 from .money import USD_RATES, convert, fmt, settlement_for, to_minor
@@ -27,10 +27,13 @@ def _bill_id() -> str:
 
 
 async def upload(poster: dict, data: bytes, filename: str, content_type: str, device: str = "") -> dict:
-    if len(data) > 8 * 1024 * 1024:
+    """Read one bill file into a DRAFT bill. Nothing is shown to sponsors until the poster confirms (submit)."""
+    if len(data) > intake.MAX_BYTES:
         raise PostingError("Files up to 8 MB, please.")
     try:
         doc = await asyncio.to_thread(intake.read_document, data, filename, content_type)
+    except intake.DocumentError as exc:
+        raise PostingError(str(exc)) from exc
     except Exception as exc:
         raise PostingError("That file could not be opened. Please upload a photo (JPG or PNG) or a PDF.") from exc
     fields = await intake.extract(doc)
@@ -39,7 +42,8 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     ext = ".pdf" if doc.kind == "pdf" else ".jpg"
     path = Path(settings.upload_dir) / f"{bid}{ext}"
-    path.write_bytes(data if doc.kind == "pdf" else (doc.image or data))
+    # The private copy has no EXIF or GPS (photos are re-encoded) and no document metadata (PDFs keep pages only).
+    path.write_bytes(doc.stored or data)
     currency = fields.get("currency") or poster.get("currency") or "USD"
     amount_minor = 0
     if fields.get("amount"):
@@ -47,7 +51,15 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
             amount_minor = to_minor(fields["amount"], currency)
         except ValueError:
             amount_minor = 0
-    extraction = dict(fields, doc_meta=doc.meta, device=device,
+    conf = dropbill.confidence(fields, biller=biller, biller_score=score)
+    # The full account number lives only in the private column (it goes to the biller in the payout note);
+    # the stored reading keeps the last four characters.
+    account_full = (fields.get("account_reference") or "")[:64]
+    stored_fields = dict(fields, account_reference=redact.mask_account(account_full) or None)
+    if stored_fields.get("ocr", {}).get("account_reference"):
+        stored_fields["ocr"] = dict(stored_fields["ocr"],
+                                    account_reference=redact.mask_account(stored_fields["ocr"]["account_reference"]))
+    extraction = dict(stored_fields, doc_meta=doc.meta, device=device, confidence_levels=conf,
                       biller_match={"id": biller["id"] if biller else None, "score": round(score, 2)})
     now = db.now()
     db.insert("bills", {
@@ -58,10 +70,18 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
         "city": fields.get("city") or (biller["city"] if biller else ""),
         "currency": currency, "amount_minor": amount_minor, "settle_currency": settlement_for(currency),
         "settle_minor": 0, "due_date": fields.get("due_date") or "", "status": "DRAFT",
+        "account_masked": redact.mask_account(account_full), "account_private": account_full,
         "extraction": json.dumps(extraction), "doc_path": str(path), "doc_sha": doc.sha256, "phash": doc.phash,
         "created_at": now, "updated_at": now,
     })
     return db.one("SELECT * FROM bills WHERE id = ?", (bid,))
+
+
+def scan_view(bill: dict) -> dict:
+    """The poster's pre-filled form for a DRAFT bill (see app/ai/dropbill.py)."""
+    ext = json.loads(bill["extraction"])
+    fields = dict(ext, biller_name=ext.get("biller_name"))
+    return dropbill.scan_view(bill, fields, ext.get("confidence_levels") or {}, bill["account_private"] or "")
 
 
 async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None = None) -> dict:
@@ -84,7 +104,7 @@ async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None =
         dt.date.fromisoformat(form.get("due_date") or "")
     except ValueError:
         raise PostingError("Please enter the due date as YYYY-MM-DD.")
-    account_ref = (form.get("account_reference") or ext.get("account_reference") or "").strip()
+    account_ref = (form.get("account_reference") or bill["account_private"] or "").strip()
     if not account_ref:
         raise PostingError("Please enter the account, student or patient number printed on the bill. "
                            "It is only shared with the biller.")
@@ -129,10 +149,14 @@ async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None =
                         account_hash=fields["account_hash"], biller=biller, biller_score=score, edited_fields=edited,
                         device=ext.get("device", ""), today=today, exclude_bill=bill_id)
     names = [n for n in [ext.get("customer_name"), poster.get("name")] if n]
+    if form.get("service_address"):
+        ext["service_address"] = str(form["service_address"]).strip()[:120]
     text, source = await story.write(category=fields["category"], city=fields["city"], country=fields["country"],
                                      alias=fields["alias"], words=fields["poster_words"], names=names,
                                      address=ext.get("service_address"))
     ext["story_source"] = source
+    period = (form.get("service_period") or ext.get("service_period") or "").strip()[:60]
+    ext["service_period"] = redact.clean_period(period, names)
     ext["edited_fields"] = edited
     # The full account reference is stored in one private column and only ever sent to the biller in the
     # payout note. Public cards and events use the masked form.

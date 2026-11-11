@@ -53,3 +53,16 @@ def findings(original: str, scrubbed: str) -> list[str]:
         if tag in scrubbed and tag not in original:
             kinds.append(label)
     return kinds
+
+
+def clean_period(period: str | None, names: list[str] | None = None) -> str | None:
+    """A billing period or school term is safe to show ("Oct 2026", "Term 3"). Anything carrying an email, a long
+    number or a person's name is dropped rather than shown."""
+    p = re.sub(r"\s+", " ", (period or "")).strip()[:60]
+    if not p or EMAIL.search(p) or LONG_NUMBER.search(p):
+        return None
+    for name in filter(None, names or []):
+        for part in [name] + [x for x in re.split(r"\s+", name) if len(x) >= 3]:
+            if re.search(rf"\b{re.escape(part)}\b", p, re.I):
+                return None
+    return p
