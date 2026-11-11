@@ -313,3 +313,18 @@ def test_capture_webhook_adopts_an_order_billkind_never_heard_back_about(monkeyp
     assert wait_for(lambda: db.one("SELECT status FROM contributions WHERE id = ?", (con["id"],))["status"] == "CAPTURED")
     assert db.one("SELECT order_id FROM contributions WHERE id = ?", (con["id"],))["order_id"] == oid
     assert _status(bill["id"]) == "FUNDING"
+
+
+def test_a_new_checkout_releases_the_sponsors_earlier_unapproved_holds():
+    s, c = login("sponsor@billkind.demo")
+    first, second = _fresh_bill(), _fresh_bill()
+    r = s.post("/api/orders", json={"picks": [{"bill_id": first["id"], "amount_minor": first["settle_minor"]}]},
+               headers={"X-CSRF": c})
+    oid = r.json()["id"]
+    assert funding.remaining(funding.get_bill(first["id"])) == 0
+    s.post("/api/orders", json={"picks": [{"bill_id": second["id"], "amount_minor": 1000}]}, headers={"X-CSRF": c})
+    assert funding.remaining(funding.get_bill(first["id"])) == first["settle_minor"]  # visible to others again
+    httpx.post(f"{BASE}/fakepaypal/test/approve/{oid}", json={})  # approved late: still counts
+    r = s.post(f"/api/orders/{oid}/capture", headers={"X-CSRF": c})
+    assert r.status_code == 200 and r.json()["status"] == "COMPLETED"
+    assert wait_for(lambda: _status(first["id"]) in ("FUNDED", "PAYOUT_SENT", "PAID"))

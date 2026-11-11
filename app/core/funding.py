@@ -103,6 +103,14 @@ async def start_payment(sponsor: dict, picks: list[tuple[str, int]], *, source: 
         raise FundingError("each bill can appear only once in a payment")
     group = db.new_id("GRP")
     async with _lock():
+        if vault_id is None:
+            # One open checkout per sponsor: a new one releases the holds of any earlier checkout still waiting for
+            # approval, so one account cannot keep every bill reserved (and out of every deck) by never approving.
+            # An earlier order approved later still counts: record_capture accepts released rows, and any excess
+            # is refunded.
+            db.run("UPDATE contributions SET status = 'CANCELLED' WHERE sponsor_id = ? AND status = 'CREATED' AND "
+                   "order_id != '' AND capture_id = '' AND expires_at > ? AND source NOT IN ('agent','recurring')",
+                   (sponsor["id"], db.now()))
         bills = [get_bill(bid) for bid, _ in picks]
         currencies = {b["settle_currency"] for b in bills}
         if len(currencies) != 1:
