@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 SANDBOX_API = "https://api-m.sandbox.paypal.com"
+PAYPAL_MODES = ("fake", "sandbox")
 
 
 def _load_dotenv(path: Path) -> None:
@@ -35,7 +36,8 @@ def _env(name: str, default: str = "") -> str:
 @dataclass
 class Settings:
     app_base_url: str = field(default_factory=lambda: _env("APP_BASE_URL", "http://localhost:8800").rstrip("/"))
-    paypal_mode: str = field(default_factory=lambda: _env("PAYPAL_MODE", "fake"))
+    # fake (the built-in simulator) or sandbox. Unset means fake, or sandbox when PayPal credentials are configured.
+    paypal_mode: str = field(default_factory=lambda: _env("PAYPAL_MODE").lower())
     paypal_client_id: str = field(default_factory=lambda: _env("PAYPAL_CLIENT_ID"))
     paypal_client_secret: str = field(default_factory=lambda: _env("PAYPAL_CLIENT_SECRET"))
     paypal_base_url_env: str = field(default_factory=lambda: _env("PAYPAL_BASE_URL"))
@@ -58,9 +60,21 @@ class Settings:
     demo_admin_login: bool = field(default_factory=lambda: _env("DEMO_ADMIN_LOGIN", "0") == "1")
     fake_payout_delay: float = field(default_factory=lambda: float(_env("FAKE_PAYOUT_DELAY", "2.5")))
 
+    def __post_init__(self) -> None:
+        has_credentials = bool(self.paypal_client_id and self.paypal_client_secret)
+        if not self.paypal_mode:
+            self.paypal_mode = "sandbox" if has_credentials else "fake"
+        if self.paypal_mode not in PAYPAL_MODES:
+            raise ValueError(f"PAYPAL_MODE must be one of {', '.join(PAYPAL_MODES)} (got {self.paypal_mode!r})")
+        # The simulator approves any order through public test routes. It must never run next to real credentials,
+        # where a typo in PAYPAL_MODE would otherwise turn real checkouts into simulated ones.
+        if self.paypal_mode == "fake" and has_credentials:
+            raise ValueError("PAYPAL_MODE=fake cannot run with PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET set: "
+                             "use PAYPAL_MODE=sandbox, or remove the credentials to use the built-in simulator")
+
     @property
     def is_fake(self) -> bool:
-        return self.paypal_mode != "sandbox"
+        return self.paypal_mode == "fake"
 
     @property
     def paypal_base_url(self) -> str:

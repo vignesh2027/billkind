@@ -76,3 +76,23 @@ def test_a_long_support_chat_cannot_break_the_admin_console():
     tid = db.one("SELECT id FROM tickets WHERE subject = 'long chat'")["id"]
     db.run("UPDATE tickets SET transcript = '[{\"role\": \"user\", \"content\": \"cut' WHERE id = ?", (tid,))
     assert a.get("/admin").status_code == 200  # a transcript damaged some other way is skipped, not fatal
+
+
+def test_paypal_mode_is_checked_and_the_simulator_never_runs_with_real_credentials(monkeypatch):
+    import pytest
+    from app.config import Settings
+    for bad in ("live", "production", "Sandboxx"):
+        monkeypatch.setenv("PAYPAL_MODE", bad)
+        with pytest.raises(ValueError, match="PAYPAL_MODE"):
+            Settings()
+    monkeypatch.setenv("PAYPAL_MODE", "Sandbox")  # case and spaces do not matter
+    assert Settings().paypal_mode == "sandbox" and not Settings().is_fake
+    monkeypatch.setenv("PAYPAL_CLIENT_ID", "an-id")
+    monkeypatch.setenv("PAYPAL_CLIENT_SECRET", "a-secret")
+    monkeypatch.setenv("PAYPAL_MODE", "fake")
+    with pytest.raises(ValueError, match="cannot run with"):
+        Settings()
+    monkeypatch.setenv("PAYPAL_MODE", "")  # unset with credentials: the sandbox, never the simulator
+    assert Settings().paypal_mode == "sandbox"
+    monkeypatch.setenv("PAYPAL_CLIENT_ID", "")
+    assert Settings().is_fake  # no credentials: the local simulator, as before
