@@ -8,6 +8,7 @@ import json
 import logging
 import mimetypes
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
@@ -26,7 +27,7 @@ from .core import automation, events, funding, jobs, notify, posting, states, we
 from .core.money import FX_AS_OF, USD_RATES, fmt, to_minor
 from .paypal import fake, webhooks
 from .paypal.client import PayPalError, client
-from .web import auth, insights_routes, views
+from .web import auth, guards, insights_routes, limits, views
 
 log = logging.getLogger("billkind")
 HERE = Path(__file__).resolve().parent
@@ -49,6 +50,21 @@ app = FastAPI(title="Billkind", lifespan=lifespan, docs_url=None, redoc_url=None
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax",
                    https_only=settings.app_base_url.startswith("https"), max_age=14 * 86400)
+UPLOAD_PATHS = ("/post", "/api/post/scan")
+
+
+def _body_limit(path: str) -> int:
+    if path == "/webhooks/paypal":
+        return 64 * guards.KB
+    if path in UPLOAD_PATHS:
+        return posting.intake.MAX_BYTES + 256 * guards.KB  # the file plus the form around it
+    return 1024 * guards.KB
+
+
+# Added last, so they run first: an oversized body is refused before anything reads it.
+app.add_middleware(guards.BodyLimit, limit_for=_body_limit)
+app.add_middleware(guards.RangeGuard)
+app.add_middleware(guards.SecurityHeaders, https=settings.app_base_url.startswith("https"))
 # The AR model files: Scene Viewer reads the glTF type, and iOS Quick Look needs the USDZ type to open the file.
 # WebP and woff2 are listed too: slim server images have no mime.types file and would send them as text/plain.
 mimetypes.add_type("image/webp", ".webp")
@@ -130,7 +146,10 @@ async def live_stats():
 @app.get("/events/stream")
 async def stream(request: Request):
     user = auth.current_user(request)
-    q = events.broker.subscribe(user["id"] if user else None)
+    try:
+        q = events.broker.subscribe(user["id"] if user else None, limits.client_ip(request))
+    except events.TooManyStreams:
+        return JSONResponse({"error": "Too many live connections."}, status_code=503, headers={"Retry-After": "30"})
 
     async def gen():
         try:
@@ -171,26 +190,102 @@ DEMO_ACCOUNTS = [
     ("biller@billkind.demo", "Biller", "See payouts arrive"),
     ("admin@billkind.demo", "Admin", "Review queue, billers, webhooks"),
 ]
+# The shared accounts that hold other people's data: one-click only when DEMO_ADMIN_LOGIN is on.
+PRIVILEGED_DEMO = {"admin@billkind.demo", "biller@billkind.demo"}
+
+
+def demo_accounts() -> list[tuple[str, str, str]]:
+    """The one-click accounts offered (and accepted) right now. Empty outside the sandbox and the local fake."""
+    if not automation.demo_mode():
+        return []
+    return [a for a in DEMO_ACCOUNTS if settings.demo_admin_login or a[0] not in PRIVILEGED_DEMO]
+
+
+def _public_password_refused(user: dict, password: str) -> bool:
+    """The seeded demo password is published in the repository. It may open the shared demo accounts only, never
+    the admin, the biller or a tester's own poster account."""
+    from scripts.seed import DEMO_PASSWORD
+    return password == DEMO_PASSWORD and user["email"] not in {a[0] for a in demo_accounts()}
+
+
+_DEMO_POSTER_BY_IP: dict[str, str] = {}
+
+
+def visitor_key(request: Request, user: dict | None) -> str:
+    """The rate limit key for this visitor: the account, or the address when signed out. The one-click demo
+    accounts are shared by every judge, so there it is the account and the address together, and one busy visitor
+    cannot use up the limit for everyone else."""
+    if not user:
+        return limits.client_ip(request)
+    if shared_demo(user):
+        return f"{user['id']}|{limits.client_ip(request)}"
+    return user["id"]
+
+
+def ai_quota(request: Request, user: dict | None) -> None:
+    """Count one model call for this account. Past the limit, this request runs on the non-AI fallback."""
+    key = visitor_key(request, user)
+    if not limits.AI_CALLS.allow(key):
+        llm.block_for_this_request()
+
+
+def _same_site_form(request: Request) -> bool:
+    """A sign-in form posted from this site. Browsers send Origin (or at least Referer) on form posts; a missing
+    pair is allowed for older clients, but "null" (sandboxed frames, opaque redirects) is not."""
+    src = request.headers.get("origin")
+    if src is None:
+        src = request.headers.get("referer")
+        if not src:
+            return True
+    if src == "null":
+        return False
+    allowed = {urlsplit(settings.app_base_url).netloc.lower(), request.headers.get("host", "").lower()}
+    return urlsplit(src).netloc.lower() in allowed
+
+
+def shared_demo(user: dict | None) -> bool:
+    """A one-click demo account that every visitor shares."""
+    return bool(user) and user["email"] in {a[0] for a in demo_accounts()}
+
+
+def mask_email(email: str | None) -> str:
+    if not email or "@" not in email:
+        return email or ""
+    name, domain = email.split("@", 1)
+    return f"{name[:1]}***@{domain}"
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = "/"):
-    return render(request, "login.html", next=next, demo=DEMO_ACCOUNTS, error="")
+    return render(request, "login.html", next=next, demo=demo_accounts(), error="")
 
 
 @app.post("/login")
 async def login(request: Request, email: str = Form(...), password: str = Form(""), next: str = Form("/"),
                 demo: str = Form("")):
-    user = db.one("SELECT * FROM users WHERE email = ?", (email.strip().lower(),))
-    ok = user and (auth.check_password(password, user["password_hash"]) or
-                   (demo == "1" and email.endswith("@billkind.demo")))
+    email = email.strip().lower()
+    ip = limits.client_ip(request)
+    if not _same_site_form(request):  # login CSRF: another site signing the visitor in to an account it controls
+        return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
+    user = db.one("SELECT * FROM users WHERE email = ?", (email,))
+    # One-click demo sign-in is an exact match against the offered list, checked before any hashing. The password
+    # check runs off the event loop: scrypt takes tens of milliseconds and would stall every other request.
+    is_demo = demo == "1" and email in {a[0] for a in demo_accounts()}
+    if not is_demo and limits.LOGIN_FAILURES.over(ip):  # too many failures from this address: no more guesses
+        return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
+    ok = bool(user) and (is_demo or (not _public_password_refused(user, password) and
+                                     await asyncio.to_thread(auth.check_password, password, user["password_hash"])))
     if not ok:
-        return render(request, "login.html", next=next, demo=DEMO_ACCOUNTS, error="Email or password is not right.")
+        limits.LOGIN_FAILURES.allow(ip)
+        return render(request, "login.html", next=next, demo=demo_accounts(), error="Email or password is not right.")
     resp_cookie = None
-    if demo == "1" and user["email"] == "poster@billkind.demo":
+    if is_demo and user["email"] == "poster@billkind.demo":
         # Each browser gets its own demo poster account, so testers do not trip each other's velocity limits.
         own = request.cookies.get("bk_demo_poster", "")
         mine = db.one("SELECT * FROM users WHERE id = ? AND role = 'poster'", (own,)) if own else None
+        if not mine and not limits.DEMO_POSTERS.allow(ip):  # an address minting accounts in a loop reuses its latest
+            mine = db.one("SELECT * FROM users WHERE id = ?", (_DEMO_POSTER_BY_IP.get(ip, ""),))
+            resp_cookie = mine["id"] if mine else None
         if not mine:
             uid = db.new_id("U-DEMO")
             db.insert("users", {"id": uid, "email": f"poster+{uid[-6:].lower()}@billkind.demo", "name": "Kavya Raman",
@@ -198,20 +293,29 @@ async def login(request: Request, email: str = Form(...), password: str = Form("
                                 "currency": "INR", "prefs": "{}", "created_at": db.now()})
             mine = db.one("SELECT * FROM users WHERE id = ?", (uid,))
             resp_cookie = uid
+            if len(_DEMO_POSTER_BY_IP) > 20_000:
+                _DEMO_POSTER_BY_IP.clear()
+            _DEMO_POSTER_BY_IP[ip] = uid
         user = mine
+    request.session.clear()  # nothing from before sign-in carries over, the CSRF token included
     request.session["uid"] = user["id"]
+    request.session["ep"] = int(user.get("session_epoch") or 0)
     if not next.startswith("/") or next.startswith("//"):
         next = "/"
     if next == "/":
         next = {"sponsor": "/deck", "poster": "/me", "admin": "/admin", "biller": "/biller"}.get(user["role"], "/")
     resp = RedirectResponse(next, status_code=303)
     if resp_cookie:
-        resp.set_cookie("bk_demo_poster", resp_cookie, max_age=60 * 86400, httponly=True, samesite="lax")
+        resp.set_cookie("bk_demo_poster", resp_cookie, max_age=60 * 86400, httponly=True, samesite="lax",
+                        secure=settings.app_base_url.startswith("https"))
     return resp
 
 
 @app.post("/logout")
 async def logout(request: Request):
+    user = auth.current_user(request)
+    if user and not shared_demo(user):  # shared one-click accounts stay signed in for the other visitors
+        db.run("UPDATE users SET session_epoch = session_epoch + 1 WHERE id = ?", (user["id"],))
     request.session.clear()
     return RedirectResponse("/", status_code=303)
 
@@ -228,6 +332,27 @@ async def inbox(request: Request):
 
 CURRENCIES = sorted(USD_RATES)
 SCAN_LIMIT = (8, 600)  # at most 8 bill readings per poster in 10 minutes (keeps the free AI tier for everyone)
+SCAN_LIMIT_TEXT = "That is a lot of bills in a few minutes. Please wait a little and try again."
+_scans_in_flight: dict[str, int] = {}
+
+
+@contextlib.contextmanager
+def _scan_slot(user: dict):
+    """Claim one bill reading for this poster, or raise PostingError. Readings still in progress count too, so
+    parallel uploads cannot all pass the check before any bill row exists."""
+    recent = db.one("SELECT COUNT(*) AS n FROM bills WHERE poster_id = ? AND created_at > ?",
+                    (user["id"], db.now() - SCAN_LIMIT[1]))["n"]
+    if recent + _scans_in_flight.get(user["id"], 0) >= SCAN_LIMIT[0]:
+        raise posting.PostingError(SCAN_LIMIT_TEXT)
+    _scans_in_flight[user["id"]] = _scans_in_flight.get(user["id"], 0) + 1
+    try:
+        yield
+    finally:
+        left = _scans_in_flight.get(user["id"], 1) - 1
+        if left > 0:
+            _scans_in_flight[user["id"]] = left
+        else:
+            _scans_in_flight.pop(user["id"], None)
 
 
 @app.get("/post", response_class=HTMLResponse)
@@ -245,7 +370,8 @@ async def post_upload(request: Request, file: UploadFile = File(...), csrf: str 
     auth.check_csrf(request, csrf)
     data = await file.read(posting.intake.MAX_BYTES + 1)
     try:
-        bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
+        with _scan_slot(user):
+            bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
     except posting.PostingError as exc:
         return render(request, "post.html", error=str(exc), samples=[], drop_samples=DROP_SAMPLES,
                       categories=CATEGORY_LABELS, currencies=CURRENCIES)
@@ -261,15 +387,13 @@ async def post_scan(request: Request, file: UploadFile = File(...), device: str 
     """
     user = auth.require(request, "poster")
     auth.check_csrf(request, request.headers.get("x-csrf"))
-    recent = db.one("SELECT COUNT(*) AS n FROM bills WHERE poster_id = ? AND created_at > ?",
-                    (user["id"], db.now() - SCAN_LIMIT[1]))["n"]
-    if recent >= SCAN_LIMIT[0]:
-        return JSONResponse({"error": "That is a lot of bills in a few minutes. Please wait a little and try again."},
-                            status_code=429)
     data = await file.read(posting.intake.MAX_BYTES + 1)
     try:
-        bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
+        with _scan_slot(user):
+            bill = await posting.upload(user, data, file.filename or "", file.content_type or "", device=device[:64])
     except posting.PostingError as exc:
+        if str(exc) == SCAN_LIMIT_TEXT:
+            return JSONResponse({"error": SCAN_LIMIT_TEXT}, status_code=429)
         return JSONResponse({"error": str(exc)}, status_code=400)
     return posting.scan_view(bill)
 
@@ -278,24 +402,41 @@ async def post_scan(request: Request, file: UploadFile = File(...), device: str 
 # so a tester never trips the duplicate checks.
 DROP_SAMPLES = {"electricity": "Electricity bill, Detroit", "school": "School fee receipt, Chennai",
                 "water": "Water bill, Leeds", "clinic": "Clinic bill, Tampa"}
+SAMPLE_RENDERS = 2  # sample images rendered at once; each takes about half a second of CPU
+_sample_slots: dict[int, asyncio.Semaphore] = {}
+
+
+async def _render_sample(fn, *args) -> bytes:
+    key = id(asyncio.get_running_loop())
+    if key not in _sample_slots:
+        _sample_slots[key] = asyncio.Semaphore(SAMPLE_RENDERS)
+    async with _sample_slots[key]:
+        return await asyncio.to_thread(fn, *args)
+
+
+def _sample_allowed(request: Request) -> None:
+    if not limits.SAMPLES.allow(limits.client_ip(request)):
+        raise HTTPException(429, "Too many sample bills at once. Please wait a moment.")
 
 
 @app.get("/samples/fresh/{kind}.jpg")
-async def fresh_drop_sample(kind: str):
+async def fresh_drop_sample(request: Request, kind: str):
     from fastapi.responses import Response
     from scripts.make_samples import fresh_bill
     if kind not in DROP_SAMPLES:
         raise HTTPException(404)
-    data = await asyncio.to_thread(fresh_bill, kind)
+    _sample_allowed(request)
+    data = await _render_sample(fresh_bill, kind)
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store",
                     "Content-Disposition": f"inline; filename=sample-{kind}-bill.jpg"})
 
 
 @app.get("/samples/fresh-school-bill.jpg")
-async def fresh_sample():
+async def fresh_sample(request: Request):
     from fastapi.responses import Response
     from scripts.make_samples import fresh_sample as make
-    data = await asyncio.to_thread(make)
+    _sample_allowed(request)
+    data = await _render_sample(make)
     return Response(data, media_type="image/jpeg",
                     headers={"Content-Disposition": "attachment; filename=fresh-school-bill.jpg"})
 
@@ -364,6 +505,9 @@ async def poster_withdraw(request: Request, bill_id: str, csrf: str = Form("")):
         await funding.withdraw(bill_id, "You withdrew this bill.")
     except (funding.FundingError, states.IllegalTransition) as exc:
         notify.send(user["id"], "notice", "Could not withdraw", str(exc), bill_id=bill_id)
+    except PayPalError:  # refunds already made stay made; withdrawing again finishes the rest
+        notify.send(user["id"], "notice", "Could not withdraw",
+                    "PayPal could not finish every refund. Please try again.", bill_id=bill_id)
     return RedirectResponse(f"/me#{bill_id}", status_code=303)
 
 
@@ -372,8 +516,19 @@ async def poster_thanks(request: Request, bill_id: str, text: str = Form(...), c
                         polish: str = Form("")):
     user = auth.require(request, "poster")
     auth.check_csrf(request, csrf)
+    if polish:
+        ai_quota(request, user)
     from .ai import story
-    clean = await story.polish_thanks(text, names=[user["name"]]) if polish else story.scrub(text, names=[user["name"]])[:260]
+    bill = db.one("SELECT * FROM bills WHERE id = ? AND poster_id = ?", (bill_id, user["id"]))
+    if not bill:
+        raise HTTPException(404)
+    # The note is shown to sponsors and on the public wall: scrub the bill's own details as well as the poster's name.
+    ext = json.loads(bill["extraction"] or "{}")
+    names = [n for n in (user["name"], ext.get("customer_name")) if n]
+    extra = [a for a in (ext.get("service_address"),) if a]
+    accounts = [a for a in (bill["account_private"],) if a]
+    clean = (await story.polish_thanks(text, names=names, extra=extra, accounts=accounts) if polish
+             else story.scrub(text, names=names, extra=extra, accounts=accounts)[:260])
     try:
         funding.thank(bill_id, user["id"], clean)
     except funding.FundingError as exc:
@@ -410,6 +565,9 @@ async def api_pass_reset(request: Request):
 async def api_create_order(request: Request):
     user = auth.require(request, "sponsor")
     auth.check_csrf(request, request.headers.get("x-csrf"))
+    if not limits.ORDERS.allow(visitor_key(request, user)):
+        return JSONResponse({"error": "That is a lot of payments in a few minutes. Please wait a little and try again."},
+                            status_code=429)
     body = await request.json()
     try:
         picks = [(p["bill_id"], int(p["amount_minor"])) for p in body.get("picks", [])]
@@ -531,6 +689,8 @@ async def receipt(request: Request, contribution_id: str):
         raise HTTPException(404)
     b = db.one("SELECT * FROM bills WHERE id = ?", (c["bill_id"],))
     item = db.one("SELECT * FROM payout_items WHERE bill_id = ? ORDER BY created_at DESC", (b["id"],))
+    if shared_demo(user):
+        c = dict(c, payer_email=mask_email(c["payer_email"]))
     return render(request, "receipt.html", c=c, b=b, card=views.card(b, user["currency"]), item=item)
 
 
@@ -563,9 +723,13 @@ async def admin_home(request: Request):
     counts = {s: db.one("SELECT COUNT(*) AS n FROM bills WHERE status = ?", (s,))["n"] for s in states.BILL_LABELS}
     tickets = db.q("SELECT t.*, u.email FROM tickets t JOIN users u ON u.id = t.user_id ORDER BY t.status, t.created_at DESC LIMIT 20")
     for t in tickets:
-        t["lines"] = json.loads(t["transcript"] or "[]")
+        try:  # one damaged transcript must never take the whole console down
+            lines = json.loads(t["transcript"] or "[]")
+        except ValueError:
+            lines = []
+        t["lines"] = [x for x in lines if isinstance(x, dict)] if isinstance(lines, list) else []
     return render(request, "admin.html", review=review, failed=failed, billers=billers, hooks=hooks,
-                  counts=counts, tickets=tickets, api_calls=list(reversed(client().calls[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
+                  counts=counts, tickets=tickets, api_calls=list(reversed(list(client().calls)[-30:])), ai_calls=list(reversed(llm.CALLS[-20:])))
 
 
 @app.post("/admin/bills/{bill_id}/decide")
@@ -595,6 +759,34 @@ async def admin_payout(request: Request, bill_id: str, action: str = Form(...), 
     return RedirectResponse("/admin", status_code=303)
 
 
+@app.post("/admin/bills/{bill_id}/biller")
+async def admin_attach_biller(request: Request, bill_id: str, biller_id: str = Form(...), csrf: str = Form("")):
+    """Link a bill in review to a registry biller, so a real bill from a newly added biller can be approved."""
+    auth.require(request, "admin")
+    auth.check_csrf(request, csrf)
+    try:
+        posting.admin_attach_biller(bill_id, biller_id)
+    except posting.PostingError as exc:
+        return render(request, "error.html", message=str(exc))
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/billers")
+async def admin_add_biller(request: Request):
+    """Add a biller (unverified). Fields: name, category, country, city, paypal_email, and optionally bill_id to link
+    a bill in review to it straight away. Verifying it stays a separate step."""
+    auth.require(request, "admin")
+    form = dict(await request.form())
+    auth.check_csrf(request, form.get("csrf"))
+    try:
+        bid = posting.admin_add_biller(form)
+        if form.get("bill_id"):
+            posting.admin_attach_biller(str(form["bill_id"]), bid)
+    except posting.PostingError as exc:
+        return render(request, "error.html", message=str(exc))
+    return RedirectResponse("/admin#billers", status_code=303)
+
+
 @app.post("/admin/billers/{biller_id}/verify")
 async def admin_verify_biller(request: Request, biller_id: str, csrf: str = Form("")):
     auth.require(request, "admin")
@@ -620,6 +812,8 @@ async def paypal_webhook(request: Request):
     try:
         event = json.loads(raw)
     except ValueError:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    if not isinstance(event, dict):
         return JSONResponse({"error": "bad json"}, status_code=400)
     ok, method, note = await webhooks.verify(dict(request.headers), raw, event)
     fresh = webhook_handlers.record(event, ok, method, note)
@@ -651,6 +845,7 @@ async def bulk_preview(request: Request):
     auth.check_csrf(request, request.headers.get("x-csrf"))
     body = await request.json()
     if body.get("text"):
+        ai_quota(request, user)
         f, source = await bulk.parse(str(body["text"]))
     else:
         f, source = bulk.clean(body.get("filter") or {}), "form"
@@ -677,16 +872,21 @@ async def agent_page(request: Request):
         decisions = [agent.decision_view(d) for d in db.q(
             "SELECT * FROM agent_decisions WHERE agent_id = ? ORDER BY created_at DESC LIMIT 40", (a["id"],))]
         spent = float(agent.month_spent_usd(a["id"], user["id"]))
+    token = automation.active_token(user["id"])
+    if token and shared_demo(user):  # every visitor shares this account: never show one visitor's PayPal login
+        token = dict(token, payer_email=mask_email(token["payer_email"]),
+                     payment_token_id="\u2022\u2022\u2022\u2022" + (token["payment_token_id"] or "")[-4:])
     return render(request, "agent.html", agent=a, policy=json.loads(a["policy"]) if a else None,
-                  decisions=decisions, spent=spent, token=automation.active_token(user["id"]),
+                  decisions=decisions, spent=spent, token=token,
                   period="since the demo budget was renewed" if a and agent.budget_renewed(user["id"]) else "this month",
                   draft=request.session.pop("agent_draft", None), pledges=automation.pledges_for(user["id"]))
 
 
 @app.post("/sponsor/agent/parse")
 async def agent_parse(request: Request, rules: str = Form(...), csrf: str = Form("")):
-    auth.require(request, "sponsor")
+    user = auth.require(request, "sponsor")
     auth.check_csrf(request, csrf)
+    ai_quota(request, user)
     policy, source = await agent.parse_rules(rules)
     request.session["agent_draft"] = {"rules": rules[:1000], "policy": policy, "source": source}
     return RedirectResponse("/sponsor/agent#confirm", status_code=303)
@@ -733,6 +933,8 @@ async def vault_connect(request: Request, next: str = "/sponsor/agent"):
     user = auth.require(request, "sponsor")
     if not next.startswith("/") or next.startswith("//"):
         next = "/sponsor/agent"
+    if request.headers.get("sec-fetch-site") == "cross-site":  # only Billkind's own links start a PayPal setup
+        return RedirectResponse(next, status_code=303)
     request.session["vault_next"] = next
     try:
         st = await client().create_setup_token(return_url=settings.app_base_url + "/sponsor/vault/return",
@@ -802,6 +1004,7 @@ async def help_page(request: Request):
 async def help_ask(request: Request):
     user = auth.require(request)
     auth.check_csrf(request, request.headers.get("x-csrf"))
+    ai_quota(request, user)
     body = await request.json()
     return await support.answer(user, str(body.get("question", "")), body.get("history") or [])
 

@@ -15,7 +15,8 @@ log = logging.getLogger("billkind.jobs")
 
 async def tick(now: float | None = None) -> dict:
     now = now or db.now()
-    out = {"expired_reservations": funding.expire_reservations(), "healed_payouts": await funding.heal_unpaid_funded()}
+    out = {"expired_reservations": funding.expire_reservations(), "healed_payouts": await funding.heal_unpaid_funded(),
+           "resent_payouts": await funding.resolve_unknown_payouts(now)}
     # Payouts that have waited more than 20 seconds without a webhook are polled.
     stale = db.one("SELECT COUNT(*) AS n FROM payout_items WHERE status = 'PENDING' AND created_at < ?", (now - 20,))
     if stale and stale["n"]:

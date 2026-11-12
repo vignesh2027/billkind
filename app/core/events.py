@@ -12,17 +12,33 @@ import json
 from .. import db
 
 
+class TooManyStreams(Exception):
+    pass
+
+
 class Broker:
+    """Live event fan-out, held in this process: the app runs as a single uvicorn worker (one container on the VM,
+    max_containers=1 on Modal). More workers would each see only their own events."""
+
+    MAX_TOTAL = 500
+    MAX_PER_CLIENT = 6
+
     def __init__(self) -> None:
         self.subs: list[tuple[asyncio.Queue, str | None]] = []
+        self.clients: dict[int, str] = {}
 
-    def subscribe(self, user_id: str | None) -> asyncio.Queue:
+    def subscribe(self, user_id: str | None, client: str = "") -> asyncio.Queue:
+        if len(self.subs) >= self.MAX_TOTAL or \
+                (client and sum(1 for c in self.clients.values() if c == client) >= self.MAX_PER_CLIENT):
+            raise TooManyStreams()
         q: asyncio.Queue = asyncio.Queue(maxsize=200)
         self.subs.append((q, user_id))
+        self.clients[id(q)] = client
         return q
 
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self.subs = [(s, u) for s, u in self.subs if s is not q]
+        self.clients.pop(id(q), None)
 
     def push(self, event: dict) -> None:
         audience = set(event.get("audience") or [])

@@ -47,7 +47,9 @@ async def admin_insights_page(request: Request):
 async def insights_agent_round(request: Request, scope: str = "sponsor"):
     """One round of Studio's client tool runner: AG-UI messages and Studio tools in, AG-UI events out."""
     auth.check_csrf(request, request.headers.get("x-csrf"))
-    _, data = _scope(request, scope)
+    user, data = _scope(request, scope)
+    from ..main import ai_quota
+    ai_quota(request, user)
     messages, tools = insights_agent.parse_request(await request.json())
     events = await insights_agent.respond(messages, tools, insights.schema_summary(data))
     return {"events": events}

@@ -14,12 +14,15 @@ import logging
 from .. import db
 from ..paypal.client import PayPalError, client, first_capture
 from . import events, notify, states
-from .money import convert, exponent, fmt, to_value
+from .money import convert, exponent, fmt, to_minor, to_value
 
 log = logging.getLogger("billkind.funding")
 RESERVATION_SECONDS = 15 * 60
-TERMINAL_PAYOUT = {"SUCCESS", "FAILED", "UNCLAIMED", "RETURNED", "BLOCKED", "DENIED", "REFUNDED", "REVERSED"}
+PENDING_HOLD_SECONDS = 30 * 86400  # a capture PayPal holds as PENDING keeps its reservation this long
+# UNCLAIMED is not final: the receiver can still claim it for 30 days, so it counts as live until it is RETURNED.
+TERMINAL_PAYOUT = {"SUCCESS", "FAILED", "RETURNED", "BLOCKED", "DENIED", "REFUNDED", "REVERSED"}
 FAILED_PAYOUT = TERMINAL_PAYOUT - {"SUCCESS"}
+DEAD_PAYOUT_SQL = "('FAILED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED')"
 
 _locks: dict[int, asyncio.Lock] = {}
 
@@ -96,8 +99,18 @@ async def start_payment(sponsor: dict, picks: list[tuple[str, int]], *, source: 
     """
     if not picks:
         raise FundingError("nothing to pay")
+    if len({bid for bid, _ in picks}) != len(picks):  # each pick is checked against what the bill still needs
+        raise FundingError("each bill can appear only once in a payment")
     group = db.new_id("GRP")
     async with _lock():
+        if vault_id is None:
+            # One open checkout per sponsor: a new one releases the holds of any earlier checkout still waiting for
+            # approval, so one account cannot keep every bill reserved (and out of every deck) by never approving.
+            # An earlier order approved later still counts: record_capture accepts released rows, and any excess
+            # is refunded.
+            db.run("UPDATE contributions SET status = 'CANCELLED' WHERE sponsor_id = ? AND status = 'CREATED' AND "
+                   "order_id != '' AND capture_id = '' AND expires_at > ? AND source NOT IN ('agent','recurring')",
+                   (sponsor["id"], db.now()))
         bills = [get_bill(bid) for bid, _ in picks]
         currencies = {b["settle_currency"] for b in bills}
         if len(currencies) != 1:
@@ -125,10 +138,19 @@ async def start_payment(sponsor: dict, picks: list[tuple[str, int]], *, source: 
               "description": f"Paid to {b['biller_name']}, never to the person"} for b, r in zip(bills, rows)]
     desc = (f"Billkind: {len(rows)} bills paid to their billers" if len(rows) > 1
             else f"Billkind: {bills[0]['category']} bill {bills[0]['id']} paid to {bills[0]['biller_name']}")
+    async def create():
+        return await client().create_order(currency=currency, items=items, total=to_value(total, currency),
+                                           custom_id=group, invoice_id=group, description=desc,
+                                           vault_id=vault_id, request_id=group)
     try:
-        order = await client().create_order(currency=currency, items=items, total=to_value(total, currency),
-                                            custom_id=group, invoice_id=group, description=desc,
-                                            vault_id=vault_id, request_id=group)
+        try:
+            order = await create()
+        except PayPalError as exc:
+            if exc.status < 500:
+                raise
+            # An unclear failure (a vaulted order is charged on creation): ask again with the same PayPal-Request-Id,
+            # which returns the original order instead of charging twice.
+            order = await create()
     except PayPalError:
         for r in rows:
             db.update("contributions", "id", r["id"], status="CANCELLED")
@@ -187,7 +209,19 @@ async def record_capture(order: dict) -> dict:
     funded: list[dict] = []
     async with _lock():
         contribs = db.q("SELECT * FROM contributions WHERE order_id = ?", (oid,))
-        if cap["status"] in ("COMPLETED", "PENDING"):
+        if cap["status"] == "PENDING":
+            # PayPal is holding the money (review, eCheck, a currency the account must accept by hand). It is not
+            # received yet: keep the reservation so nobody overfunds the bill, but fund nothing and pay out nothing.
+            # PAYMENT.CAPTURE.COMPLETED or DENIED settles it later.
+            for c in contribs:
+                if c["status"] in ("CREATED", "CANCELLED"):
+                    if c["status"] == "CANCELLED":
+                        set_contribution(c, "CREATED")
+                    db.update("contributions", "id", c["id"], capture_id=cap["id"], payer_email=payer,
+                              expires_at=db.now() + PENDING_HOLD_SECONDS)
+            db.update("orders", "order_id", oid, status="PENDING")
+            return {"status": "PENDING", "capture_id": cap["id"], "funded": []}
+        if cap["status"] == "COMPLETED":
             for c in contribs:
                 if c["status"] in ("CREATED", "CANCELLED"):
                     set_contribution(c, "CAPTURED", capture_id=cap["id"], payer_email=payer,
@@ -228,7 +262,7 @@ async def _after_change(bill_id: str) -> dict | None:
         bill = set_status(bill, "FUNDING")
     if bill["status"] in ("FUNDED", "PAYOUT_SENT", "PAID", "PAYOUT_FAILED"):
         if net > bill["settle_minor"]:  # a late capture after the bill was covered
-            await _refund_excess(bill, net - bill["settle_minor"])
+            await _refund_excess_or_notice(bill, net - bill["settle_minor"])
         return get_bill(bill_id)
     if bill["status"] in ("WITHDRAWN", "EXPIRED", "REJECTED"):
         if net > 0:  # money arrived after the bill closed: return it
@@ -236,13 +270,25 @@ async def _after_change(bill_id: str) -> dict | None:
         return get_bill(bill_id)
     if net >= bill["settle_minor"] and bill["status"] in states.OPEN_FOR_FUNDING:
         excess = net - bill["settle_minor"]
-        if excess > 0:
-            await _refund_excess(bill, excess)
+        # Funded first: a refund PayPal refuses must not leave a covered bill open for more payments.
         bill = set_status(bill, "FUNDED", funded_minor=bill["settle_minor"])
         events.publish("fully_funded", f"A {_cat(bill)} bill in {bill['city'] or bill['country']} "
                        f"is fully funded", bill=bill, amount_minor=bill["settle_minor"],
                        currency=bill["settle_currency"])
+        if excess > 0:
+            await _refund_excess_or_notice(bill, excess)
+            bill = get_bill(bill_id)
     return bill
+
+
+async def _refund_excess_or_notice(bill: dict, excess: int) -> None:
+    try:
+        await _refund_excess(bill, excess)
+    except PayPalError as exc:
+        log.warning("excess refund on %s failed: %s", bill["id"], exc)
+        _admin_notice(f"Refund the extra on bill {bill['id']}",
+                      f"Bill {bill['id']} received {fmt(excess, bill['settle_currency'])} more than it needs and "
+                      f"PayPal refused the automatic refund ({exc}). Refund it from the PayPal dashboard.")
 
 
 async def _refund_excess(bill: dict, excess: int) -> None:
@@ -284,6 +330,57 @@ async def refund_contribution(c: dict, amount_minor: int | None, reason: str) ->
                    currency=c["currency"], public=False, audience=[c["sponsor_id"]], ref=c["id"])
 
 
+def _capture_of(resource: dict) -> str:
+    """The capture a refund or reversal resource belongs to (its rel=up link), or the resource itself."""
+    for link in resource.get("links") or []:
+        if link.get("rel") == "up" and "/captures/" in link.get("href", ""):
+            return link["href"].rstrip("/").split("/")[-1]
+    return resource.get("id", "")
+
+
+async def apply_external_refund(resource: dict, kind: str = "refund") -> str:
+    """A refund or reversal that Billkind did not make (PayPal dashboard, dispute, chargeback). Record it so the
+    bill's funded total reflects money the platform no longer holds, and tell the admins."""
+    if str(resource.get("invoice_id", "")).startswith("CON-"):
+        return "own refund"  # Billkind's own refunds carry the contribution id; they are recorded when made
+    ref = resource.get("id", "")
+    if ref and db.kv_get(f"extrefund.{ref}"):
+        return "already recorded"
+    cid = _capture_of(resource)
+    amt = resource.get("amount") or {}
+    async with _lock():
+        rows = db.q("SELECT * FROM contributions WHERE capture_id = ? AND status IN ('CAPTURED','PARTIALLY_REFUNDED') "
+                    "ORDER BY created_at", (cid,)) if cid else []
+        if not rows:
+            return "no matching contribution"
+        try:
+            left = to_minor(amt["value"], amt["currency_code"]) if amt.get("value") else \
+                sum(r["amount_minor"] - r["refunded_minor"] for r in rows)
+        except (KeyError, ValueError):
+            left = sum(r["amount_minor"] - r["refunded_minor"] for r in rows)
+        if ref:
+            db.kv_set(f"extrefund.{ref}", "1")
+        touched = []
+        for c in rows:
+            take = min(left, c["amount_minor"] - c["refunded_minor"])
+            if take <= 0:
+                continue
+            new_refunded = c["refunded_minor"] + take
+            set_contribution(c, "REFUNDED" if new_refunded >= c["amount_minor"] else "PARTIALLY_REFUNDED",
+                             refunded_minor=new_refunded)
+            left -= take
+            touched.append(c["bill_id"])
+        for bill_id in dict.fromkeys(touched):
+            db.update("bills", "id", bill_id, funded_minor=captured_net(bill_id))
+    for bill_id in dict.fromkeys(touched):
+        b = get_bill(bill_id)
+        _admin_notice(f"Outside {kind} on bill {bill_id}",
+                      f"PayPal reports a {kind} on capture {cid} that Billkind did not make. Bill {bill_id} is "
+                      f"{b['status']} with {fmt(b['funded_minor'], b['settle_currency'])} of "
+                      f"{fmt(b['settle_minor'], b['settle_currency'])} still held. Check it before any payout or refund.")
+    return f"{kind} recorded on {len(touched)} bill(s)"
+
+
 async def refund_all(bill: dict, reason: str) -> int:
     n = 0
     for c in db.q("SELECT * FROM contributions WHERE bill_id = ? AND status IN ('CAPTURED','PARTIALLY_REFUNDED')",
@@ -300,6 +397,13 @@ async def withdraw(bill_id: str, reason: str, by_admin: bool = False) -> dict:
     async with _lock():
         bill = get_bill(bill_id)
         if bill["status"] in ("PAYOUT_SENT", "PAID"):
+            raise FundingError("this bill is already being paid to the biller and cannot be withdrawn")
+        # A payout request may be in flight (the bill turns PAYOUT_SENT only once PayPal answers), unconfirmed, or
+        # unclaimed but still claimable. Refunding then would pay the bill twice.
+        live = live_payout(bill_id)
+        if live and live["status"] == "UNCLAIMED":
+            await cancel_unclaimed(live)
+        elif live:
             raise FundingError("this bill is already being paid to the biller and cannot be withdrawn")
         n = await refund_all(bill, "The bill you supported was withdrawn before it was paid, so your money "
                              "was returned in full.")
@@ -341,6 +445,26 @@ def _note(bill: dict) -> str:
 
 CURRENCY_ISSUES = {"INSUFFICIENT_FUNDS", "CURRENCY_NOT_SUPPORTED", "CURRENCY_NOT_SUPPORTED_FOR_RECEIVER",
                    "RECEIVER_UNCONFIRMED_CURRENCY", "CURRENCY_COMPLIANCE"}
+PAYOUT_SUBJECT = "You received a bill payment from Billkind"
+PAYOUT_MESSAGE = "A Billkind sponsor paid a customer's bill. The account reference is in the payment note."
+UNKNOWN_RETRY_AFTER = 60       # seconds before an unconfirmed payout batch is sent again (same sender_batch_id)
+CLAIM_STALE_AFTER = 300        # a claim this old never got an answer at all (for example the process restarted)
+
+
+def live_payout(bill_id: str) -> dict | None:
+    """The bill's payout item that may still deliver money (claimed, unknown, pending, unclaimed or paid), if any."""
+    return db.one(f"SELECT * FROM payout_items WHERE bill_id = ? AND status NOT IN {DEAD_PAYOUT_SQL} "
+                  "ORDER BY created_at DESC", (bill_id,))
+
+
+def _payout_item(row: dict, bill: dict) -> dict:
+    return {"receiver": row["receiver"], "value": to_value(row["amount_minor"], row["currency"]),
+            "currency": row["currency"], "note": _note(bill), "sender_item_id": row["sender_item_id"]}
+
+
+def _is_duplicate(exc: PayPalError) -> bool:
+    text = str(exc.body).upper()
+    return "DUPLICATE" in text or "ALREADY EXISTS" in text
 
 
 async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None:
@@ -349,8 +473,12 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
     Items go out in the bill's settlement currency. If PayPal refuses the batch for a currency reason (for example
     the platform account holds no balance in that currency), the batch is retried once with those items in USD at
     the indicative rate, and the bill records why.
+
+    The sender_batch_id is chosen before the call and stored with the claimed items, so a call whose outcome is
+    unclear (a timeout, a 5xx, a crash) is sent again with the same id and can never pay a biller twice.
     """
     items, ready = [], []
+    sender_batch_id = db.new_id("BATCH")
     async with _lock():
         # Claim each bill under the lock by writing its payout item first, so a webhook and a browser capture that
         # finish together can never pay the same bill twice.
@@ -358,9 +486,7 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
             bill = get_bill(bill["id"])
             if bill["status"] not in ("FUNDED", "PAYOUT_FAILED"):
                 continue
-            active = db.one("SELECT sender_item_id FROM payout_items WHERE bill_id = ? AND status NOT IN "
-                            "('FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED')", (bill["id"],))
-            if active:
+            if live_payout(bill["id"]):
                 continue
             biller = db.one("SELECT * FROM billers WHERE id = ?", (bill["biller_id"],))
             if not biller or not biller["verified"]:
@@ -372,23 +498,23 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
             cur, amount = bill["settle_currency"], bill["settle_minor"]
             if force_usd and cur != "USD":
                 amount, cur = convert(amount, cur, "USD"), "USD"
-            db.insert("payout_items", {"sender_item_id": sid, "batch_id": "", "bill_id": bill["id"],
-                                       "amount_minor": amount, "currency": cur, "receiver": biller["paypal_email"],
-                                       "status": "CLAIMED", "created_at": db.now(), "updated_at": db.now()})
-            items.append({"receiver": biller["paypal_email"], "value": to_value(amount, cur),
-                          "currency": cur, "note": _note(bill), "sender_item_id": sid, "_minor": amount})
+            row = {"sender_item_id": sid, "batch_id": "", "bill_id": bill["id"], "amount_minor": amount,
+                   "currency": cur, "receiver": biller["paypal_email"], "status": "CLAIMED",
+                   "sender_batch_id": sender_batch_id, "created_at": db.now(), "updated_at": db.now()}
+            db.insert("payout_items", row)
+            items.append(_payout_item(row, bill))
             ready.append((bill, biller, sid))
     if not items:
         return None
-    sender_batch_id = db.new_id("BATCH")
     try:
-        resp = await client().create_payout(sender_batch_id=sender_batch_id, items=items,
-                                            subject="You received a bill payment from Billkind",
-                                            message="A Billkind sponsor paid a customer's bill. The account "
-                                                    "reference is in the payment note.")
+        resp = await client().create_payout(sender_batch_id=sender_batch_id, items=items, subject=PAYOUT_SUBJECT,
+                                            message=PAYOUT_MESSAGE, request_id=sender_batch_id)
     except PayPalError as exc:
+        if exc.status >= 500 or exc.status == 0:
+            await _payout_unknown([sid for _, _, sid in ready], sender_batch_id, str(exc))
+            return None
         reason = exc.issue or (exc.body.get("name") if isinstance(exc.body, dict) else "")
-        for _, _, sid in ready:  # release the claims; a retry writes new items
+        for _, _, sid in ready:  # PayPal refused the batch outright: release the claims; a retry writes new items
             db.update("payout_items", "sender_item_id", sid, status="FAILED", updated_at=db.now())
         if not force_usd and reason in CURRENCY_ISSUES and any(it["currency"] != "USD" for it in items):
             for bill, _, _ in ready:
@@ -396,20 +522,122 @@ async def send_payouts(bills: list[dict], force_usd: bool = False) -> str | None
                           f"Paid out in USD because PayPal refused a {bill['settle_currency']} payout ({reason}).")
             return await send_payouts([b for b, _, _ in ready], force_usd=True)
         for bill, _, _ in ready:
-            set_status(bill, "PAYOUT_FAILED", reject_reason=str(exc))
+            _set_status_or_notice(get_bill(bill["id"]), "PAYOUT_FAILED", reject_reason=str(exc))
         _admin_notice("Payout batch failed", str(exc))
         return None
+    except Exception as exc:  # timeout, connection reset: PayPal may or may not have created the batch
+        await _payout_unknown([sid for _, _, sid in ready], sender_batch_id, f"{type(exc).__name__}: {exc}")
+        return None
+    return _payout_accepted(resp, sender_batch_id)
+
+
+def _set_status_or_notice(bill: dict, new: str, **fields) -> dict:
+    """Payout bookkeeping must never stop half way: an unexpected bill state is reported to the admins instead."""
+    try:
+        return set_status(bill, new, **fields)
+    except states.IllegalTransition as exc:
+        log.error("bill %s: %s", bill["id"], exc)
+        _admin_notice(f"Check bill {bill['id']}",
+                      f"A payout update wanted to move bill {bill['id']} from {bill['status']} to {new}, which is not "
+                      f"allowed. Check the payout items for this bill in PayPal before changing anything.")
+        return bill
+
+
+def _payout_accepted(resp: dict, sender_batch_id: str) -> str:
     batch_id = resp["batch_header"]["payout_batch_id"]
-    db.insert("payout_batches", {"batch_id": batch_id, "sender_batch_id": sender_batch_id,
-                                 "status": resp["batch_header"].get("batch_status", "PENDING"),
-                                 "created_at": db.now(), "updated_at": db.now()})
-    for (bill, biller, sid), it in zip(ready, items):
-        db.update("payout_items", "sender_item_id", sid, batch_id=batch_id, status="PENDING", updated_at=db.now())
-        set_status(get_bill(bill["id"]), "PAYOUT_SENT", payout_batch_id=batch_id)
-        events.publish("payout_sent", f"Paying {biller['name']} for a {_cat(bill)} bill in "
-                       f"{bill['city'] or bill['country']}", bill=bill, amount_minor=bill["settle_minor"],
-                       currency=bill["settle_currency"], ref=sid)
+    db.run("INSERT OR IGNORE INTO payout_batches (batch_id, sender_batch_id, status, created_at, updated_at) "
+           "VALUES (?, ?, ?, ?, ?)", (batch_id, sender_batch_id, resp["batch_header"].get("batch_status", "PENDING"),
+                                      db.now(), db.now()))
+    for row in db.q("SELECT * FROM payout_items WHERE sender_batch_id = ? AND status IN ('CLAIMED','UNKNOWN')",
+                    (sender_batch_id,)):
+        db.update("payout_items", "sender_item_id", row["sender_item_id"], batch_id=batch_id, status="PENDING",
+                  updated_at=db.now())
+        bill = get_bill(row["bill_id"])
+        if bill["status"] in ("FUNDED", "PAYOUT_FAILED"):
+            bill = _set_status_or_notice(bill, "PAYOUT_SENT", payout_batch_id=batch_id)
+        else:
+            db.update("bills", "id", bill["id"], payout_batch_id=batch_id)
+        biller = db.one("SELECT name FROM billers WHERE id = ?", (bill["biller_id"],))
+        events.publish("payout_sent", f"Paying {biller['name'] if biller else bill['biller_name']} for a "
+                       f"{_cat(bill)} bill in {bill['city'] or bill['country']}", bill=bill,
+                       amount_minor=bill["settle_minor"], currency=bill["settle_currency"], ref=row["sender_item_id"])
     return batch_id
+
+
+async def _payout_unknown(sids: list[str], sender_batch_id: str, why: str) -> None:
+    """The payout call ended without a clear answer. Keep the claim, and hold the bill as being paid so it can be
+    neither withdrawn nor paid again until the same batch is resent (see resolve_unknown_payouts)."""
+    async with _lock():
+        for sid in sids:
+            row = db.one("SELECT * FROM payout_items WHERE sender_item_id = ?", (sid,))
+            if not row or row["status"] not in ("CLAIMED", "UNKNOWN"):
+                continue  # a webhook already reported the real outcome
+            db.update("payout_items", "sender_item_id", sid, status="UNKNOWN", updated_at=db.now())
+            bill = get_bill(row["bill_id"])
+            if bill["status"] in ("FUNDED", "PAYOUT_FAILED"):
+                _set_status_or_notice(bill, "PAYOUT_SENT")
+    log.warning("payout batch %s outcome unknown: %s", sender_batch_id, why)
+    _admin_notice("Payout not confirmed yet",
+                  f"PayPal did not confirm payout batch {sender_batch_id} ({why[:200]}). Billkind will send the same "
+                  "batch again, which PayPal never pays twice. No action is needed unless this repeats.")
+
+
+async def resolve_unknown_payouts(now: float | None = None) -> int:
+    """Resend payout batches whose first call had no clear outcome, with the same sender_batch_id.
+
+    PayPal either accepts it (the first call never arrived), replays its first answer, or refuses it as a duplicate.
+    A duplicate with no replay is left for a person to check: Billkind never pays the biller a second time on a guess.
+    """
+    now = now or db.now()
+    rows = db.q("SELECT * FROM payout_items WHERE (status = 'UNKNOWN' AND updated_at < ?) OR "
+                "(status = 'CLAIMED' AND created_at < ?) ORDER BY created_at",
+                (now - UNKNOWN_RETRY_AFTER, now - CLAIM_STALE_AFTER))
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(r["sender_batch_id"] or "", []).append(r)
+    done = 0
+    for sbid, group in groups.items():
+        if not sbid:  # claimed by an older release that did not store the batch id: only a person can check
+            await _payout_manual_check(group, "the payout batch id was not recorded")
+            continue
+        items = [_payout_item(r, get_bill(r["bill_id"])) for r in group]
+        try:
+            resp = await client().create_payout(sender_batch_id=sbid, items=items, subject=PAYOUT_SUBJECT,
+                                                message=PAYOUT_MESSAGE, request_id=sbid)
+        except PayPalError as exc:
+            if exc.status >= 500 or exc.status == 0:
+                await _payout_unknown([r["sender_item_id"] for r in group], sbid, str(exc))
+            elif _is_duplicate(exc):
+                await _payout_manual_check(group, f"PayPal already has batch {sbid}")
+            else:  # a clean refusal: the batch was never created
+                async with _lock():
+                    for r in group:
+                        db.update("payout_items", "sender_item_id", r["sender_item_id"], status="FAILED",
+                                  updated_at=db.now())
+                        bill = get_bill(r["bill_id"])
+                        if bill["status"] in ("FUNDED", "PAYOUT_SENT"):
+                            _set_status_or_notice(bill, "PAYOUT_FAILED", reject_reason=str(exc))
+                _admin_notice("Payout batch failed", str(exc))
+            continue
+        except Exception as exc:
+            await _payout_unknown([r["sender_item_id"] for r in group], sbid, f"{type(exc).__name__}: {exc}")
+            continue
+        _payout_accepted(resp, sbid)
+        done += 1
+    return done
+
+
+async def _payout_manual_check(group: list[dict], why: str) -> None:
+    async with _lock():
+        for r in group:
+            db.update("payout_items", "sender_item_id", r["sender_item_id"], status="MANUAL_CHECK",
+                      updated_at=db.now())
+            bill = get_bill(r["bill_id"])
+            if bill["status"] in ("FUNDED", "PAYOUT_SENT"):
+                _set_status_or_notice(bill, "PAYOUT_FAILED", reject_reason=f"payout needs a manual check: {why}")
+    _admin_notice("Payout needs a manual check",
+                  f"Billkind could not confirm payout items {', '.join(r['sender_item_id'] for r in group)} ({why}). "
+                  "Look them up in PayPal before retrying or refunding: retry and refund stay locked until then.")
 
 
 async def apply_payout_item(resource: dict) -> str:
@@ -419,30 +647,64 @@ async def apply_payout_item(resource: dict) -> str:
     row = db.one("SELECT * FROM payout_items WHERE sender_item_id = ?", (sid,))
     if not row:
         return "unknown item"
+    if row["status"] == "SUCCESS" and status in ("REFUNDED", "REVERSED", "RETURNED"):
+        # Money that reached the biller came back (a refund or reversal of the payout). The bill stays as it was:
+        # record the item's new state and tell the admins, who decide what happens next.
+        db.update("payout_items", "sender_item_id", sid, status=status, updated_at=db.now())
+        _admin_notice(f"Payout {status} after it was paid: bill {row['bill_id']}",
+                      f"PayPal reports payout item {sid} for bill {row['bill_id']} as {status} after it was paid to "
+                      f"the biller, so the biller no longer holds that money. Check the bill before doing anything.")
+        return status
     if row["status"] == status or row["status"] in TERMINAL_PAYOUT:
         return "no change"
     db.update("payout_items", "sender_item_id", sid, status=status, updated_at=db.now(),
-              payout_item_id=resource.get("payout_item_id", ""), transaction_id=resource.get("transaction_id", ""))
-    if status not in TERMINAL_PAYOUT:
+              batch_id=row["batch_id"] or resource.get("payout_batch_id", ""),
+              payout_item_id=resource.get("payout_item_id", "") or row["payout_item_id"],
+              transaction_id=resource.get("transaction_id", ""))
+    if status not in TERMINAL_PAYOUT and status != "UNCLAIMED":
         return "pending"
     async with _lock():
         bill = get_bill(row["bill_id"])
-        if bill["status"] != "PAYOUT_SENT":
-            return "bill not awaiting payout"
         if status == "SUCCESS":
+            if bill["status"] == "FUNDED":  # the claim never heard back, but the payout went through
+                bill = set_status(bill, "PAYOUT_SENT")
+            if bill["status"] not in ("PAYOUT_SENT", "PAYOUT_FAILED"):
+                _admin_notice(f"Payout paid for bill {bill['id']} in state {bill['status']}",
+                              f"PayPal reports payout item {sid} as paid to the biller, but bill {bill['id']} is "
+                              f"{bill['status']}. Check whether its sponsors were also refunded.")
+                return "bill not awaiting payout"
+            # PAYOUT_FAILED here means an unclaimed payout was claimed later: it still counts.
             bill = set_status(bill, "PAID", paid_at=db.now(), payout_item_id=resource.get("payout_item_id", ""),
                               payout_txn_id=resource.get("transaction_id", ""))
-        else:
+        elif bill["status"] == "PAYOUT_SENT":
             bill = set_status(bill, "PAYOUT_FAILED", reject_reason=f"payout {status.lower()}")
+        else:
+            return "bill not awaiting payout"
     if status == "SUCCESS":
         _on_paid(bill)
     else:
+        extra = (" An unclaimed payout stays claimable for 30 days; Retry or Refund cancels it first."
+                 if status == "UNCLAIMED" else "")
         _admin_notice(f"Payout {status} for bill {bill['id']}",
                       f"The payout to the biller ended {status}. Retry after checking the biller account, "
-                      f"or refund the sponsors.")
+                      f"or refund the sponsors.{extra}")
         events.publish("payout_failed", f"Payout for a {_cat(bill)} bill needs attention", bill=bill,
                        public=False, audience=_sponsors(bill["id"]) + [bill["poster_id"]])
     return status
+
+
+async def cancel_unclaimed(row: dict) -> None:
+    """Cancel an UNCLAIMED payout item so its money comes back before any retry or refund. Caller holds the lock."""
+    if not row["payout_item_id"]:
+        raise FundingError("the unclaimed payout has no PayPal item id yet; try again in a minute")
+    try:
+        resp = await client().cancel_payout_item(row["payout_item_id"])
+    except PayPalError as exc:
+        raise FundingError(f"PayPal could not cancel the unclaimed payout ({exc.issue or exc.status}), so nothing "
+                           "else was changed") from exc
+    if resp.get("transaction_status") != "RETURNED":
+        raise FundingError("PayPal has not returned the unclaimed payout yet, so nothing else was changed")
+    db.update("payout_items", "sender_item_id", row["sender_item_id"], status="RETURNED", updated_at=db.now())
 
 
 def _sponsors(bill_id: str) -> list[str]:
@@ -483,7 +745,8 @@ async def poll_payouts() -> int:
     """Fallback when webhooks cannot reach us: read pending batches from PayPal."""
     n = 0
     for b in db.q("SELECT DISTINCT batch_id FROM payout_items WHERE batch_id != '' AND status NOT IN "
-                  "('SUCCESS','FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED','CLAIMED')"):
+                  "('SUCCESS','FAILED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED','CLAIMED','UNKNOWN',"
+                  "'MANUAL_CHECK')"):
         try:
             data = await client().get_payout_batch(b["batch_id"])
         except PayPalError:
@@ -495,9 +758,15 @@ async def poll_payouts() -> int:
 
 
 async def retry_payout(bill_id: str) -> str | None:
-    bill = get_bill(bill_id)
-    if bill["status"] != "PAYOUT_FAILED":
-        raise FundingError("only failed payouts can be retried")
+    async with _lock():
+        bill = get_bill(bill_id)
+        if bill["status"] != "PAYOUT_FAILED":
+            raise FundingError("only failed payouts can be retried")
+        live = live_payout(bill_id)
+        if live and live["status"] == "UNCLAIMED":
+            await cancel_unclaimed(live)
+        elif live:
+            raise FundingError("a payout for this bill may still reach the biller, so it cannot be retried yet")
     last = db.one("SELECT currency FROM payout_items WHERE bill_id = ? ORDER BY created_at DESC", (bill_id,))
     # A failed payout in a foreign currency is retried in USD; a failed USD payout is retried as is.
     return await send_payouts([bill], force_usd=bool(last and last["currency"] != "USD"))
@@ -509,6 +778,8 @@ def thank(bill_id: str, poster_id: str, text: str) -> dict:
         raise FundingError("not your bill")
     if bill["status"] != "PAID":
         raise FundingError("thank-you notes open once the biller is paid")
+    if bill["thank_you"]:
+        raise FundingError("a thank-you was already sent for this bill")
     db.update("bills", "id", bill_id, thank_you=text)
     for sid in _sponsors(bill_id):
         notify.send(sid, "thanks", "A thank-you from the household you helped", text, bill_id=bill_id)
@@ -520,8 +791,7 @@ def thank(bill_id: str, poster_id: str, text: str) -> dict:
 async def heal_unpaid_funded(older_than: float = 60) -> int:
     """Funded bills with no live payout (for example a payout call that crashed) get their payout sent."""
     rows = db.q("SELECT * FROM bills WHERE status = 'FUNDED' AND updated_at < ? AND id NOT IN (SELECT bill_id FROM "
-                "payout_items WHERE status NOT IN ('FAILED','UNCLAIMED','RETURNED','BLOCKED','DENIED','REFUNDED','REVERSED'))",
-                (db.now() - older_than,))
+                f"payout_items WHERE status NOT IN {DEAD_PAYOUT_SQL})", (db.now() - older_than,))
     if rows:
         await send_payouts(rows)
     return len(rows)

@@ -32,6 +32,12 @@ EDITING_SOFTWARE = ("photoshop", "gimp", "canva", "pixelmator", "affinity", "pai
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PDF_PAGES = 4
 MAX_PIXELS = 40_000_000          # refuse decompression bombs long before Pillow's own limit
+# A few kilobytes of PDF can inflate to megabytes of page content, and text extraction then runs for minutes. Real
+# bills use a few hundred kilobytes at most across their pages.
+MAX_PDF_CONTENT = 1_000_000
+MAX_PDF_IMAGES = 16              # image objects looked at on a scanned page (only the largest is decoded)
+MAX_TEXT_CHARS = 20_000          # text kept from a document for the reading, the hash and the AI
+OCR_SIDE = 2400                  # OCR runs on a copy this size at most: enough for bill print, far cheaper
 VISION_SIDE = 1024               # what the vision model sees (Groq free tier: about 2,000 input tokens per image)
 STORE_SIDE = 1600                # the private copy kept for reviewers
 IMAGE_FORMATS = {"JPEG", "MPO", "PNG", "WEBP"}
@@ -88,8 +94,11 @@ def _ocr(img: Image.Image) -> str:
     exe = shutil.which("tesseract")
     if not exe:
         return ""
+    small = img.convert("L")
+    if max(small.size) > OCR_SIDE:
+        small.thumbnail((OCR_SIDE, OCR_SIDE))
     buf = io.BytesIO()
-    img.convert("L").save(buf, format="PNG")
+    small.save(buf, format="PNG")
     try:
         out = subprocess.run([exe, "stdin", "stdout", "--psm", "4"], input=buf.getvalue(),
                              capture_output=True, timeout=25)
@@ -141,21 +150,49 @@ def _clean_pdf(reader: PdfReader) -> bytes:
 
 
 def _pdf_page_image(reader: PdfReader) -> Image.Image | None:
-    """For scanned PDFs without a text layer: the largest picture on the first page."""
+    """For scanned PDFs without a text layer: the largest picture on the first page.
+
+    Sizes are read from each image's dictionary first; only the single largest allowed image is decoded.
+    """
+    page = reader.pages[0]
     try:
-        images = list(reader.pages[0].images)
+        xobjects = page["/Resources"].get_object()["/XObject"].get_object()
     except Exception:
         return None
-    best = None
-    for im in images:
+    best_name, best_px = None, 0
+    for name in list(xobjects.keys())[:MAX_PDF_IMAGES]:
         try:
-            pil = im.image
-            if pil is not None and pil.width * pil.height <= MAX_PIXELS and \
-                    (best is None or pil.width * pil.height > best.width * best.height):
-                best = pil
+            obj = xobjects[name].get_object()
+            if obj.get("/Subtype") != "/Image":
+                continue
+            px = int(obj.get("/Width", 0)) * int(obj.get("/Height", 0))
         except Exception:
             continue
-    return best.convert("RGB") if best is not None else None
+        if 0 < px <= MAX_PIXELS and px > best_px:
+            best_name, best_px = name, px
+    if best_name is None:
+        return None
+    try:
+        pil = page.images[str(best_name)].image
+    except Exception:
+        return None
+    if pil is None or pil.width * pil.height > MAX_PIXELS:
+        return None
+    return pil.convert("RGB")
+
+
+def _pdf_text(reader: PdfReader) -> str:
+    """Page text, refusing PDFs whose page content would take far longer to read than any real bill."""
+    total = 0
+    for page in reader.pages:
+        try:
+            contents = page.get_contents()
+            total += len(contents.get_data()) if contents is not None else 0
+        except Exception as exc:
+            raise DocumentError("That PDF could not be read. Please try a photo of the bill instead.") from exc
+        if total > MAX_PDF_CONTENT:
+            raise DocumentError("That PDF could not be read. Please try a photo of the bill instead.")
+    return "\n".join((p.extract_text() or "") for p in reader.pages)[:MAX_TEXT_CHARS]
 
 
 def read_document(data: bytes, filename: str = "", content_type: str = "") -> Doc:
@@ -173,7 +210,7 @@ def read_document(data: bytes, filename: str = "", content_type: str = "") -> Do
             raise DocumentError("That PDF has no pages.")
         if pages > MAX_PDF_PAGES:
             raise DocumentError(f"Bills up to {MAX_PDF_PAGES} pages, please. Upload just the page with the amount due.")
-        text = "\n".join((p.extract_text() or "") for p in reader.pages)
+        text = _pdf_text(reader)
         info = reader.metadata or {}
         meta = {"producer": str(info.get("/Producer", "") or ""), "creator": str(info.get("/Creator", "") or ""),
                 "created": str(info.get("/CreationDate", "") or ""), "modified": str(info.get("/ModDate", "") or ""),
@@ -183,7 +220,7 @@ def read_document(data: bytes, filename: str = "", content_type: str = "") -> Do
         if len(text.strip()) < 40:  # a scan saved as PDF: read its picture instead
             pic = _pdf_page_image(reader)
             if pic is not None:
-                doc.text = _ocr(pic)
+                doc.text = _ocr(pic)[:MAX_TEXT_CHARS]
                 doc.image = _jpeg(pic, VISION_SIDE, 82)
                 doc.phash = _ahash(pic)
         return doc
@@ -191,7 +228,7 @@ def read_document(data: bytes, filename: str = "", content_type: str = "") -> Do
     meta = {"software": exif.get("Software", ""), "camera": exif.get("Model", ""),
             "datetime": exif.get("DateTime", ""), "width": img.width, "height": img.height,
             "had_gps": "GPSInfo" in exif}
-    return Doc(kind="image", sha256=sha, text=_ocr(img), meta=meta, phash=_ahash(img),
+    return Doc(kind="image", sha256=sha, text=_ocr(img)[:MAX_TEXT_CHARS], meta=meta, phash=_ahash(img),
                image=_jpeg(img, VISION_SIDE, 82), stored=_jpeg(img, STORE_SIDE, 85))
 
 

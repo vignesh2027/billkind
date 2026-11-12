@@ -61,8 +61,26 @@ def create_pledge(sponsor: dict, bill_id: str, max_minor: int) -> str:
     return rid
 
 
+def month_start(now: float | None = None) -> float:
+    d = dt.date.fromtimestamp(now or db.now())
+    return dt.datetime(d.year, d.month, 1).timestamp()
+
+
+def pledge_spent(p: dict, now: float | None = None) -> int:
+    """What this pledge has charged (or is charging) this calendar month, in the pledge currency."""
+    rows = db.q("SELECT c.amount_minor - c.refunded_minor AS net, c.currency FROM contributions c JOIN bills b ON "
+                "b.id = c.bill_id WHERE c.sponsor_id = ? AND c.source = 'recurring' AND b.poster_id = ? AND "
+                "b.category = ? AND (? = '' OR b.biller_id = ?) AND c.created_at >= ? AND "
+                "(c.status IN ('CAPTURED','PARTIALLY_REFUNDED') OR (c.status = 'CREATED' AND c.expires_at > ?))",
+                (p["sponsor_id"], p["poster_id"], p["category"], p["biller_id"], p["biller_id"], month_start(now),
+                 now or db.now()))
+    return sum(r["net"] if r["currency"] == p["currency"] else convert(r["net"], r["currency"], p["currency"])
+               for r in rows)
+
+
 async def run_recurring() -> int:
-    """Charge each active pledge once per new bill from the same household, biller and category."""
+    """Charge each active pledge for new bills from the same household, biller and category, never more than the
+    pledge's monthly maximum in one calendar month."""
     n = 0
     for p in db.q("SELECT * FROM recurring WHERE active = 1"):
         token = active_token(p["sponsor_id"])
@@ -74,8 +92,11 @@ async def run_recurring() -> int:
                      "AND source = 'recurring' AND status IN ('CREATED','CAPTURED','PARTIALLY_REFUNDED'))",
                      (p["poster_id"], p["category"], p["biller_id"], p["biller_id"], p["sponsor_id"]))
         for b in bills:
-            cap = p["max_minor"] if p["currency"] == b["settle_currency"] else convert(p["max_minor"], p["currency"],
-                                                                                         b["settle_currency"])
+            headroom = p["max_minor"] - pledge_spent(p)
+            if headroom < 100:
+                break  # this month's maximum is reached; the next bill waits for next month
+            cap = headroom if p["currency"] == b["settle_currency"] else convert(headroom, p["currency"],
+                                                                               b["settle_currency"])
             amount = min(cap, funding.remaining(b))
             if amount < 100:
                 continue

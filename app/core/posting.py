@@ -6,6 +6,7 @@ import asyncio
 import datetime as dt
 import json
 import random
+import re
 from pathlib import Path
 
 from .. import db
@@ -17,6 +18,17 @@ from .money import USD_RATES, convert, fmt, settlement_for, to_minor
 
 class PostingError(Exception):
     pass
+
+
+READ_SLOTS = 2  # documents read at once; the rest wait, so uploads can never fill the shared worker threads
+_slots: dict[int, asyncio.Semaphore] = {}
+
+
+def _read_slot() -> asyncio.Semaphore:
+    key = id(asyncio.get_running_loop())
+    if key not in _slots:
+        _slots[key] = asyncio.Semaphore(READ_SLOTS)
+    return _slots[key]
 
 
 def _bill_id() -> str:
@@ -31,7 +43,8 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
     if len(data) > intake.MAX_BYTES:
         raise PostingError("Files up to 8 MB, please.")
     try:
-        doc = await asyncio.to_thread(intake.read_document, data, filename, content_type)
+        async with _read_slot():
+            doc = await asyncio.to_thread(intake.read_document, data, filename, content_type)
     except intake.DocumentError as exc:
         raise PostingError(str(exc)) from exc
     except Exception as exc:
@@ -67,7 +80,7 @@ async def upload(poster: dict, data: bytes, filename: str, content_type: str, de
         "biller_name": (biller["name"] if biller else fields.get("biller_name")) or "Unknown biller",
         "category": fields.get("category") or (biller["category"] if biller else "other"),
         "country": fields.get("country") or (biller["country"] if biller else poster.get("country", "")),
-        "city": fields.get("city") or (biller["city"] if biller else ""),
+        "city": redact.safe_place(fields.get("city")) or (biller["city"] if biller else ""),
         "currency": currency, "amount_minor": amount_minor, "settle_currency": settlement_for(currency),
         "settle_minor": 0, "due_date": fields.get("due_date") or "", "status": "DRAFT",
         "account_masked": redact.mask_account(account_full), "account_private": account_full,
@@ -135,13 +148,14 @@ async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None =
         "biller_name": biller["name"] if biller else biller_name,
         "category": form.get("category") if form.get("category") in intake.CATEGORIES else bill["category"],
         "country": country or (biller["country"] if biller else ""),
-        "city": (form.get("city") or bill["city"] or (biller["city"] if biller else "")).strip()[:60],
+        # City and alias are shown in public as typed, so only plain names are kept (no numbers or payment handles).
+        "city": redact.safe_place(form.get("city") or bill["city"] or (biller["city"] if biller else "")),
         "currency": currency, "amount_minor": amount_minor, "settle_currency": settle, "settle_minor": settle_minor,
         "fx_note": fx_note, "due_date": form["due_date"],
         "account_masked": redact.mask_account(account_ref),
         "account_private": account_ref[:64],
         "account_hash": redact.account_hash(account_ref, biller["id"] if biller else billers.norm(biller_name)),
-        "alias": (form.get("alias") or "").strip()[:24], "poster_words": (form.get("words") or "").strip()[:1500],
+        "alias": redact.safe_place(form.get("alias"), 24), "poster_words": (form.get("words") or "").strip()[:1500],
         "story_consent": 1,
     }
     risk = fraud.assess(poster_id=poster["id"], bill={**bill, **fields}, extraction=ext,
@@ -153,7 +167,7 @@ async def submit(poster: dict, bill_id: str, form: dict, today: dt.date | None =
         ext["service_address"] = str(form["service_address"]).strip()[:120]
     text, source = await story.write(category=fields["category"], city=fields["city"], country=fields["country"],
                                      alias=fields["alias"], words=fields["poster_words"], names=names,
-                                     address=ext.get("service_address"))
+                                     address=ext.get("service_address"), accounts=[account_ref])
     ext["story_source"] = source
     period = (form.get("service_period") or ext.get("service_period") or "").strip()[:60]
     ext["service_period"] = redact.clean_period(period, names)
@@ -201,6 +215,40 @@ def list_bill(bill: dict) -> dict:
                 "Sponsors can now see your bill card. Money goes straight to the biller when it is covered.",
                 bill_id=bill["id"])
     return bill
+
+
+def admin_attach_biller(bill_id: str, biller_id: str) -> dict:
+    """Link a bill in review to a registry biller (for example one the admin just added for a real utility)."""
+    bill = db.one("SELECT * FROM bills WHERE id = ?", (bill_id,))
+    if not bill or bill["status"] != "REVIEW":
+        raise PostingError("Only bills in review can be linked to a biller.")
+    biller = db.one("SELECT * FROM billers WHERE id = ?", (biller_id,))
+    if not biller:
+        raise PostingError("Unknown biller.")
+    db.update("bills", "id", bill_id, biller_id=biller["id"], biller_name=biller["name"],
+              account_hash=redact.account_hash(bill["account_private"], biller["id"]) if bill["account_private"]
+              else bill["account_hash"], updated_at=db.now())
+    return db.one("SELECT * FROM bills WHERE id = ?", (bill_id,))
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def admin_add_biller(form: dict) -> str:
+    """Add a biller to the registry, unverified. The existing verify step is the second, separate check."""
+    name = str(form.get("name") or "").strip()[:120]
+    category = str(form.get("category") or "")
+    country = str(form.get("country") or "").strip().upper()
+    email = str(form.get("paypal_email") or "").strip()[:254]
+    if not name or not billers.norm(name):
+        raise PostingError("Please enter the biller's name as printed on the bill.")
+    if category not in intake.CATEGORIES:
+        raise PostingError("Please choose the biller's category.")
+    if not re.fullmatch(r"[A-Z]{2}", country):
+        raise PostingError("Please enter the biller's two-letter country code.")
+    if not EMAIL_RE.match(email):
+        raise PostingError("Please enter the PayPal email address the biller receives payments at.")
+    return billers.add(name, category, country, str(form.get("city") or "").strip()[:60], email, False)
 
 
 def admin_decide(bill_id: str, approve: bool, note: str = "") -> dict:

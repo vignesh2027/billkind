@@ -15,7 +15,8 @@ BILL_TRANSITIONS: dict[str, set[str]] = {
     "FUNDING": {"FUNDED", "WITHDRAWN", "EXPIRED", "REVIEW"},
     "FUNDED": {"PAYOUT_SENT", "PAYOUT_FAILED", "WITHDRAWN"},
     "PAYOUT_SENT": {"PAID", "PAYOUT_FAILED"},
-    "PAYOUT_FAILED": {"PAYOUT_SENT", "WITHDRAWN"},
+    # PAID: an unclaimed payout (bill marked PAYOUT_FAILED) that the biller claims later still pays the bill.
+    "PAYOUT_FAILED": {"PAYOUT_SENT", "WITHDRAWN", "PAID"},
     "PAID": set(),
     "REJECTED": set(),
     "WITHDRAWN": set(),
@@ -30,7 +31,8 @@ CONTRIBUTION_TRANSITIONS: dict[str, set[str]] = {
     "DENIED": set(),
     # A buyer can approve after the 15 minute reservation lapsed; the capture still counts and
     # any excess is refunded automatically.
-    "CANCELLED": {"CAPTURED"},
+    # CREATED again: a lapsed reservation whose capture PayPal holds as PENDING is held again until it settles.
+    "CANCELLED": {"CAPTURED", "CREATED"},
 }
 
 # Bills that sponsors may pay into.

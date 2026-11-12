@@ -7,12 +7,19 @@ which implements the same paths and payload shapes.
 from __future__ import annotations
 
 import asyncio
+import collections
+import concurrent.futures
 import time
 import uuid
 
 import httpx
 
 from ..config import settings
+
+
+# The SDK is synchronous. It gets its own worker threads, so a sponsor's capture never queues behind document
+# reading or image rendering in the shared default pool.
+_SDK_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="paypal-sdk")
 
 
 class PayPalError(Exception):
@@ -61,7 +68,7 @@ class SdkBridge:
         def run():
             return getattr(getattr(self.sdk, controller), method)(options)
         try:
-            resp = await asyncio.to_thread(run)
+            resp = await asyncio.get_running_loop().run_in_executor(_SDK_POOL, run)
         except Exception as exc:  # the SDK raises ErrorException / ApiException with the HTTP response attached
             code = getattr(exc, "response_code", 0) or 0
             text = getattr(getattr(exc, "response", None), "text", "") or str(exc)
@@ -85,7 +92,8 @@ class PayPalClient:
         self._token: str | None = None
         self._token_exp = 0.0
         self._token_locks: dict[int, asyncio.Lock] = {}
-        self.calls: list[tuple[str, str, int]] = []  # (method, path, status) for the API log
+        # (method, path, status) for the admin API log; only the latest calls are kept
+        self.calls: collections.deque[tuple[str, str, int]] = collections.deque(maxlen=200)
         self.sdk: SdkBridge | None = None
         if settings.paypal_sdk == "apimatic" and transport is None:
             try:
@@ -212,8 +220,12 @@ class PayPalClient:
     # Payouts v1 ----------------------------------------------------------------
 
     async def create_payout(self, *, sender_batch_id: str, items: list[dict], subject: str,
-                            message: str) -> dict:
-        """items: [{'receiver','value','currency','note','sender_item_id'}]"""
+                            message: str, request_id: str | None = None) -> dict:
+        """items: [{'receiver','value','currency','note','sender_item_id'}]
+
+        Resending the same sender_batch_id (and PayPal-Request-Id) never creates a second batch: PayPal either replays
+        the first response or refuses the duplicate.
+        """
         body = {
             "sender_batch_header": {
                 "sender_batch_id": sender_batch_id,
@@ -232,7 +244,13 @@ class PayPalClient:
                 for it in items
             ],
         }
-        return await self._req("POST", "/v1/payments/payouts", "create payout", body, prefer=False)
+        return await self._req("POST", "/v1/payments/payouts", "create payout", body, prefer=False,
+                               request_id=request_id)
+
+    async def cancel_payout_item(self, payout_item_id: str) -> dict:
+        """Cancel an UNCLAIMED payout item; PayPal returns the item, now RETURNED to the sender."""
+        return await self._req("POST", f"/v1/payments/payouts-item/{payout_item_id}/cancel", "cancel payout item",
+                               {}, prefer=False)
 
     async def get_payout_batch(self, batch_id: str) -> dict:
         return await self._req("GET", f"/v1/payments/payouts/{batch_id}", "get payout batch",

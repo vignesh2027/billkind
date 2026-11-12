@@ -30,9 +30,14 @@ def match(name: str, country: str | None = None) -> tuple[dict | None, float]:
             if not cand:
                 continue
             score = difflib.SequenceMatcher(None, target, cand).ratio()
-            if cand in target or target in cand:
+            same_country = not country or b["country"] == country
+            # A name inside a longer name ("Riverside Water" in "Riverside Water Services") counts as a strong match
+            # only in the same country and only for names of two or more words, so a real biller whose name merely
+            # contains a short registry word is never routed to that registry entry.
+            shorter, longer = sorted((cand, target), key=len)
+            if same_country and len(shorter.split()) >= 2 and f" {shorter} " in f" {longer} ":
                 score = max(score, 0.9)
-            if country and b["country"] != country:
+            if not same_country:
                 score -= 0.15
             if score > best_score:
                 best, best_score = b, score

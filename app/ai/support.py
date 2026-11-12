@@ -187,12 +187,17 @@ def safe_answer(user: dict, question: str) -> str:
     return POLICIES["money_flow"]
 
 
+def clean_history(history, keep: int) -> list[dict]:
+    """The chat history a browser sent, reduced to the last `keep` plain user and assistant lines."""
+    items = history if isinstance(history, list) else []
+    return [{"role": h["role"], "content": h["content"][:600]} for h in items[-keep:]
+            if isinstance(h, dict) and h.get("role") in ("user", "assistant") and isinstance(h.get("content"), str)]
+
+
 async def answer(user: dict, question: str, history: list[dict] | None = None) -> dict:
     question = question.strip()[:600]
     msgs = [{"role": "system", "content": SYSTEM + f"\nThe user is a {user['role']}."}]
-    for h in (history or [])[-6:]:
-        if h.get("role") in ("user", "assistant") and isinstance(h.get("content"), str):
-            msgs.append({"role": h["role"], "content": h["content"][:600]})
+    msgs.extend(clean_history(history, 6))
     msgs.append({"role": "user", "content": question})
     evidence: list[str] = []
     tools_used: list[str] = []
@@ -234,7 +239,7 @@ async def answer(user: dict, question: str, history: list[dict] | None = None) -
 def escalate(user: dict, transcript: list[dict], subject: str) -> str:
     tid = db.new_id("TCK")
     db.insert("tickets", {"id": tid, "user_id": user["id"], "subject": subject[:120] or "Support request",
-                          "transcript": json.dumps(transcript[-12:])[:8000], "status": "OPEN", "created_at": db.now()})
+                          "transcript": json.dumps(clean_history(transcript, 12)), "status": "OPEN", "created_at": db.now()})
     notify.send(user["id"], "notice", f"Ticket {tid} opened",
                 "A person from the Billkind team will reply here, usually within a day.")
     for a in db.q("SELECT id FROM users WHERE role = 'admin'"):

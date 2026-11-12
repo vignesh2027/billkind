@@ -110,3 +110,108 @@ def test_cert_checks():
     assert not webhooks.cert_url_allowed("https://paypal.com.evil.net/certs/X")
     assert not webhooks.cert_url_allowed("https://evilpaypal.com/certs/X")
     assert webhooks.cert_url_allowed("http://localhost:1/fakepaypal/certs/fake.pem", "http://localhost:1/fakepaypal")
+
+
+def test_scrub_removes_the_bills_own_account_and_short_ids():
+    from app.ai.redact import scrub
+    assert scrub("Student no KV-88213 at the school") == "Student no [number] at the school"
+    assert "STU4512" not in scrub("Patient STU4512 needs care")
+    assert "2023CS114" not in scrub("roll 2023CS114")
+    assert scrub("acct ab 12 cd 34 ef due", accounts=["AB12CD34EF"]) == "acct [number] due"
+    assert scrub("account 12345 due", accounts=["12345"]) == "account [number] due"
+    # Years, amounts, terms and periods still show.
+    assert scrub("Term 3 of 2026, 84.20 USD, Oct 2026") == "Term 3 of 2026, 84.20 USD, Oct 2026"
+
+
+def test_scrub_removes_direct_payment_handles():
+    from app.ai.redact import findings, scrub
+    for text in ("GPay amma123@okaxis", "cashapp $ammaR", "paypal me ammaraman22", "pay me at kavya@paytm"):
+        out = scrub(text, names=["Kavya Raman"])
+        assert "@" not in out and "$" not in out and "amma" not in out.lower(), (text, out)
+        assert "payment handle" in findings(text, out)
+
+
+def test_city_and_alias_keep_plain_names_only():
+    from app.ai.redact import safe_place
+    for ok in ("Chennai", "St. John's", "Quezon City", "São Paulo", "Aarav"):
+        assert safe_place(ok) == ok
+    for bad in ("Chennai GPay amma123@okaxis", "Leeds 07700900123", "cashapp $ammaR", "Paytm"):
+        assert safe_place(bad) == ""
+
+
+def test_story_never_quotes_the_account_reference():
+    import asyncio
+    from app.ai import story
+    text, source = asyncio.run(story.write(category="school_fees", city="Chennai", country="IN", alias="",
+                                           words="Fees for account ab-12cd-34ef are due", names=[],
+                                           accounts=["AB12CD34EF"]))
+    assert source == "template" and "34" not in text and "[number]" in text
+
+
+def test_webhook_cert_url_must_be_paypals_cert_path():
+    from app.paypal import webhooks
+    assert not webhooks.cert_url_allowed("https://www.paypal.com/x")
+    assert not webhooks.cert_url_allowed("https://api.paypal.com/v1/notifications/certs/X?a=1")
+
+
+def test_webhook_falls_back_to_the_verify_api_only_on_network_errors(monkeypatch):
+    import asyncio
+    import httpx
+    from app.paypal import client as client_mod, webhooks
+    calls = []
+
+    async def fake_verify(**kw):
+        calls.append(kw)
+        return "SUCCESS"
+    monkeypatch.setattr(client_mod.client(), "verify_webhook_signature", fake_verify)
+    headers = {"PAYPAL-TRANSMISSION-ID": "t", "PAYPAL-TRANSMISSION-TIME": "now", "PAYPAL-TRANSMISSION-SIG": "AAAA",
+               "PAYPAL-AUTH-ALGO": "SHA256withRSA",
+               "PAYPAL-CERT-URL": "https://api.paypal.com/v1/notifications/certs/CERT-missing"}
+    not_found = httpx.MockTransport(lambda req: httpx.Response(404))
+    ok, method, _ = asyncio.run(webhooks.verify(headers, b"{}", {}, webhook_id="WH", transport=not_found))
+    assert not ok and method == "self" and not calls  # a 404 is not a reason to spend a PayPal API call
+
+    def down(req):
+        raise httpx.ConnectError("down")
+    headers["PAYPAL-CERT-URL"] = "https://api.paypal.com/v1/notifications/certs/CERT-other"
+    ok, method, _ = asyncio.run(webhooks.verify(headers, b"{}", {}, webhook_id="WH", transport=httpx.MockTransport(down)))
+    assert ok and method == "api" and len(calls) == 1
+
+
+def test_single_model_call_retries_once_after_a_rate_limit(monkeypatch):
+    import asyncio
+    import httpx
+    from app.ai import llm
+    from app.config import settings
+    monkeypatch.setattr(settings, "ai_disabled", False)
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    answers = [httpx.Response(429, headers={"retry-after": "0"}, json={"error": {"message": "slow down"}}),
+               httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "hi"}}]})]
+    sent = []
+
+    async def fake_post(self, url, **kw):
+        sent.append(kw["json"]["model"])
+        r = answers.pop(0)
+        r.request = httpx.Request("POST", url)
+        return r
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    out = asyncio.run(llm.chat_raw([{"role": "user", "content": "hello"}], kind="test"))
+    assert out == {"role": "assistant", "content": "hi"} and len(sent) == 2
+
+
+def test_backup_copies_the_database_and_keeps_the_newest(tmp_path):
+    import datetime as dt
+    import sqlite3
+    import tarfile
+    from app import db
+    from scripts import backup_db
+    for day in (1, 2, 3):
+        out, tar = backup_db.backup(tmp_path, keep=2, now=dt.datetime(2026, 11, day, 12, 0))
+    copy = sqlite3.connect(out)
+    assert copy.execute("SELECT COUNT(*) FROM bills").fetchone()[0] == db.one("SELECT COUNT(*) AS n FROM bills")["n"]
+    copy.close()
+    assert sorted(p.name for p in tmp_path.glob("billkind-*.db")) == ["billkind-20261102-1200.db",
+                                                                     "billkind-20261103-1200.db"]
+    if tar:
+        with tarfile.open(tar) as t:
+            assert t.getnames()[0] == "uploads"

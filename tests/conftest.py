@@ -24,9 +24,11 @@ os.environ.setdefault("SANDBOX_CLIENT_SECRET", _dot.get("PAYPAL_CLIENT_SECRET", 
 os.environ.update({
     "DB_PATH": str(Path(_tmp) / "test.db"), "UPLOAD_DIR": str(Path(_tmp) / "uploads"),
     "APP_BASE_URL": f"http://127.0.0.1:{PORT}", "PAYPAL_MODE": "fake", "AI_DISABLED": "1",
-    "BACKGROUND_JOBS": "0", "FAKE_PAYOUT_DELAY": "0.2", "SESSION_SECRET": "test", "PAYPAL_WEBHOOK_ID": "",
+    "BACKGROUND_JOBS": "0", "FAKE_PAYOUT_DELAY": "0.2", "PAYPAL_WEBHOOK_ID": "",
+    "SESSION_SECRET": "a-test-only-session-key-that-is-long-enough",
     "PAYPAL_CLIENT_ID": "", "PAYPAL_CLIENT_SECRET": "", "PAYPAL_BASE_URL": "",
     "DEMO_SELF_HEAL": "0",  # tests/test_demo_heal.py switches it on where it is under test
+    "DEMO_ADMIN_LOGIN": "1",  # the hosted demo offers one-click Admin and Biller; tests/test_security.py turns it off
 })
 
 import httpx  # noqa: E402
@@ -58,9 +60,28 @@ def server():
     srv.should_exit = True
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Every test signs in from 127.0.0.1; the per-address limits are tested on their own."""
+    from app.web import limits
+    for w in limits.ALL:
+        w.reset()
+    yield
+
+
+TEST_PASSWORD = "a-test-only-password"
+_ONE_CLICK = {"sponsor@billkind.demo", "bigsponsor@billkind.demo", "poster@billkind.demo", "biller@billkind.demo",
+              "admin@billkind.demo"}
+
+
 def login(email: str) -> tuple[httpx.Client, str]:
     c = httpx.Client(base_url=BASE, follow_redirects=True, timeout=30)
-    c.post("/login", data={"email": email, "demo": "1", "next": "/inbox"})
+    if email in _ONE_CLICK:
+        c.post("/login", data={"email": email, "demo": "1", "next": "/inbox"})
+    else:  # other seeded accounts are not one-click: give them a private password for the test
+        from app.web.auth import hash_password
+        db.run("UPDATE users SET password_hash = ? WHERE email = ?", (hash_password(TEST_PASSWORD), email))
+        c.post("/login", data={"email": email, "password": TEST_PASSWORD, "next": "/inbox"})
     import re
     html = c.get("/inbox").text
     return c, re.search(r'<meta name="csrf" content="([0-9a-f]+)">', html).group(1)

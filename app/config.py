@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from dataclasses import dataclass, field
@@ -10,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 SANDBOX_API = "https://api-m.sandbox.paypal.com"
+PAYPAL_MODES = ("fake", "sandbox")
+WEAK_SECRETS = {"change-me", "changeme", "secret", "test"}
 
 
 def _load_dotenv(path: Path) -> None:
@@ -35,7 +38,8 @@ def _env(name: str, default: str = "") -> str:
 @dataclass
 class Settings:
     app_base_url: str = field(default_factory=lambda: _env("APP_BASE_URL", "http://localhost:8800").rstrip("/"))
-    paypal_mode: str = field(default_factory=lambda: _env("PAYPAL_MODE", "fake"))
+    # fake (the built-in simulator) or sandbox. Unset means fake, or sandbox when PayPal credentials are configured.
+    paypal_mode: str = field(default_factory=lambda: _env("PAYPAL_MODE").lower())
     paypal_client_id: str = field(default_factory=lambda: _env("PAYPAL_CLIENT_ID"))
     paypal_client_secret: str = field(default_factory=lambda: _env("PAYPAL_CLIENT_SECRET"))
     paypal_base_url_env: str = field(default_factory=lambda: _env("PAYPAL_BASE_URL"))
@@ -53,11 +57,33 @@ class Settings:
     # Hosted demo upkeep (app/core/automation.py): re-list fictional demo bills and renew the demo big sponsor's
     # agent budget. Only ever acts with PAYPAL_MODE fake or sandbox.
     demo_self_heal: bool = field(default_factory=lambda: _env("DEMO_SELF_HEAL", "1") == "1")
+    # One-click sign-in to the shared demo Admin and Biller accounts. Off unless set, so a production deploy never
+    # hands out the admin console; the hosted judging demo sets DEMO_ADMIN_LOGIN=1.
+    demo_admin_login: bool = field(default_factory=lambda: _env("DEMO_ADMIN_LOGIN", "0") == "1")
     fake_payout_delay: float = field(default_factory=lambda: float(_env("FAKE_PAYOUT_DELAY", "2.5")))
+
+    def __post_init__(self) -> None:
+        # Sessions are signed, not encrypted: anyone who knows the key can sign in as any account. A placeholder or
+        # short key is replaced with a random one (sessions then reset on restart), and the variable is named, never
+        # its value.
+        if self.session_secret in WEAK_SECRETS or len(self.session_secret) < 32:
+            logging.getLogger("billkind").warning("SESSION_SECRET is missing, a placeholder or shorter than 32 "
+                                                  "characters; using a random key for this run instead")
+            self.session_secret = secrets.token_hex(32)
+        has_credentials = bool(self.paypal_client_id and self.paypal_client_secret)
+        if not self.paypal_mode:
+            self.paypal_mode = "sandbox" if has_credentials else "fake"
+        if self.paypal_mode not in PAYPAL_MODES:
+            raise ValueError(f"PAYPAL_MODE must be one of {', '.join(PAYPAL_MODES)} (got {self.paypal_mode!r})")
+        # The simulator approves any order through public test routes. It must never run next to real credentials,
+        # where a typo in PAYPAL_MODE would otherwise turn real checkouts into simulated ones.
+        if self.paypal_mode == "fake" and has_credentials:
+            raise ValueError("PAYPAL_MODE=fake cannot run with PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET set: "
+                             "use PAYPAL_MODE=sandbox, or remove the credentials to use the built-in simulator")
 
     @property
     def is_fake(self) -> bool:
-        return self.paypal_mode != "sandbox"
+        return self.paypal_mode == "fake"
 
     @property
     def paypal_base_url(self) -> str:

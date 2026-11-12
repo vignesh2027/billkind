@@ -24,6 +24,9 @@ window.BillkindPay = (() => {
       const r = await post('/api/orders/' + id + '/capture');
       d = await r.json().catch(() => null);
       if (r.ok && d && d.status === 'COMPLETED') { onDone(d); return; }
+      if (r.ok && d && d.status === 'PENDING') {
+        onError('PayPal is still confirming this payment. It counts toward the bill once PayPal completes it.'); return;
+      }
       if (d && d.status && d.status !== 'COMPLETED' && r.ok) { onError('PayPal reported ' + d.status + '. You were not charged.'); return; }
     } catch (e) { d = null; }
     // The capture call did not confirm. A webhook may have captured the payment already, so check before saying anything.

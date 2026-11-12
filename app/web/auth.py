@@ -30,7 +30,13 @@ def current_user(request: Request) -> dict | None:
     uid = request.session.get("uid")
     if not uid:
         return None
-    return db.one("SELECT * FROM users WHERE id = ?", (uid,))
+    user = db.one("SELECT * FROM users WHERE id = ?", (uid,))
+    # Sessions are signed cookies with no server-side store. Signing out bumps the account's epoch, which retires
+    # every cookie issued before it, including copies taken from another browser.
+    if not user or int(request.session.get("ep", 0)) != int(user.get("session_epoch") or 0):
+        request.session.clear()
+        return None
+    return user
 
 
 class LoginRequired(Exception):

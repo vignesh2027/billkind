@@ -16,7 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL,
   password_hash TEXT NOT NULL, country TEXT DEFAULT 'US', currency TEXT DEFAULT 'USD',
-  prefs TEXT DEFAULT '{}', created_at REAL NOT NULL
+  prefs TEXT DEFAULT '{}', created_at REAL NOT NULL, session_epoch INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS billers (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, country TEXT NOT NULL,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS payout_items (
   sender_item_id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, payout_item_id TEXT DEFAULT '',
   bill_id TEXT NOT NULL, amount_minor INTEGER NOT NULL, currency TEXT NOT NULL,
   receiver TEXT NOT NULL, status TEXT NOT NULL, transaction_id TEXT DEFAULT '',
-  created_at REAL NOT NULL, updated_at REAL NOT NULL
+  created_at REAL NOT NULL, updated_at REAL NOT NULL, sender_batch_id TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS payout_batches (
   batch_id TEXT PRIMARY KEY, sender_batch_id TEXT NOT NULL, status TEXT NOT NULL,
@@ -108,6 +108,22 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
+# Indexes for the hot reads: public stats and decks by bill status, the scan limit by poster, sponsor pages by
+# sponsor, payouts by bill. IF NOT EXISTS, so an existing database gains them on its next start.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS ix_bills_status ON bills(status);
+CREATE INDEX IF NOT EXISTS ix_bills_poster_created ON bills(poster_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_contrib_sponsor ON contributions(sponsor_id, status);
+CREATE INDEX IF NOT EXISTS ix_payout_bill ON payout_items(bill_id);
+CREATE INDEX IF NOT EXISTS ix_events_public ON events(public, id);
+"""
+
+# Columns added after the first release. connect() adds any that an existing database is missing.
+MIGRATIONS = [
+    ("payout_items", "sender_batch_id", "TEXT DEFAULT ''"),
+    ("users", "session_epoch", "INTEGER NOT NULL DEFAULT 0"),
+]
+
 _conn: sqlite3.Connection | None = None
 _lock = threading.RLock()
 
@@ -122,6 +138,12 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL" if path != ":memory:" else "PRAGMA journal_mode=MEMORY")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    if path != ":memory:":
+        conn.execute("PRAGMA synchronous=NORMAL")  # safe with WAL: a power cut can lose the last commit, not corrupt
+    for table, column, decl in MIGRATIONS:
+        if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.executescript(INDEXES)
     _conn = conn
     return conn
 
