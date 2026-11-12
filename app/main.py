@@ -211,9 +211,20 @@ def _public_password_refused(user: dict, password: str) -> bool:
 _DEMO_POSTER_BY_IP: dict[str, str] = {}
 
 
+def visitor_key(request: Request, user: dict | None) -> str:
+    """The rate limit key for this visitor: the account, or the address when signed out. The one-click demo
+    accounts are shared by every judge, so there it is the account and the address together, and one busy visitor
+    cannot use up the limit for everyone else."""
+    if not user:
+        return limits.client_ip(request)
+    if shared_demo(user):
+        return f"{user['id']}|{limits.client_ip(request)}"
+    return user["id"]
+
+
 def ai_quota(request: Request, user: dict | None) -> None:
     """Count one model call for this account. Past the limit, this request runs on the non-AI fallback."""
-    key = user["id"] if user else limits.client_ip(request)
+    key = visitor_key(request, user)
     if not limits.AI_CALLS.allow(key):
         llm.block_for_this_request()
 
@@ -554,7 +565,7 @@ async def api_pass_reset(request: Request):
 async def api_create_order(request: Request):
     user = auth.require(request, "sponsor")
     auth.check_csrf(request, request.headers.get("x-csrf"))
-    if not limits.ORDERS.allow(user["id"]):
+    if not limits.ORDERS.allow(visitor_key(request, user)):
         return JSONResponse({"error": "That is a lot of payments in a few minutes. Please wait a little and try again."},
                             status_code=429)
     body = await request.json()

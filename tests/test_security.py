@@ -366,3 +366,22 @@ def test_placeholder_or_short_session_secret_is_never_used(monkeypatch):
         assert key != weak and len(key) >= 32
     monkeypatch.setenv("SESSION_SECRET", "k" * 40)
     assert Settings().session_secret == "k" * 40
+
+
+def test_shared_demo_sponsor_limits_are_per_visitor(monkeypatch):
+    """Every judge signs in to the same one-click sponsor, so one busy visitor must not lock the others out."""
+    from app.web import limits
+    monkeypatch.setattr(limits.ORDERS, "limit", 1)
+    bad = {"picks": [{"bill": "none"}]}  # refused as malformed after the limit check, so no order is opened
+
+    def sponsor_from(ip: str):
+        c = _client(ip)
+        c.post("/login", data={"email": "sponsor@billkind.demo", "demo": "1", "next": "/inbox"})
+        csrf = re.search(r'<meta name="csrf" content="([0-9a-f]+)">', c.get("/inbox").text).group(1)
+        return c, csrf
+
+    first, c1 = sponsor_from("203.0.113.20")
+    assert first.post("/api/orders", json=bad, headers={"X-CSRF": c1}).status_code == 400
+    assert first.post("/api/orders", json=bad, headers={"X-CSRF": c1}).status_code == 429
+    second, c2 = sponsor_from("203.0.113.21")
+    assert second.post("/api/orders", json=bad, headers={"X-CSRF": c2}).status_code == 400
