@@ -21,7 +21,10 @@ class Broker:
     max_containers=1 on Modal). More workers would each see only their own events."""
 
     MAX_TOTAL = 500
-    MAX_PER_CLIENT = 6
+    # Every open Billkind tab holds one stream, and a browser does not retry a stream refused with 503. A judging
+    # room or an office behind one address easily has more than a handful of tabs open, so the per-address cap
+    # is generous; MAX_TOTAL is what bounds the memory.
+    MAX_PER_CLIENT = 40
 
     def __init__(self) -> None:
         self.subs: list[tuple[asyncio.Queue, str | None]] = []

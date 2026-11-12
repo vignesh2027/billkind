@@ -353,6 +353,17 @@ def test_live_stream_connections_are_capped_per_address(monkeypatch):
             events.broker.unsubscribe(q)
 
 
+def test_a_room_of_judges_behind_one_address_all_get_live_updates():
+    from app.core import events
+    held = [events.broker.subscribe(None, "203.0.113.12") for _ in range(12)]
+    try:
+        with _client("203.0.113.12").stream("GET", "/events/stream") as r:
+            assert r.status_code == 200
+    finally:
+        for q in held:
+            events.broker.unsubscribe(q)
+
+
 def test_hot_queries_have_indexes():
     names = {r["name"] for r in db.q("SELECT name FROM sqlite_master WHERE type = 'index'")}
     assert {"ix_bills_status", "ix_bills_poster_created", "ix_contrib_sponsor", "ix_payout_bill"} <= names
