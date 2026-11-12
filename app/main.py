@@ -66,8 +66,9 @@ app.add_middleware(guards.BodyLimit, limit_for=_body_limit)
 app.add_middleware(guards.RangeGuard)
 app.add_middleware(guards.SecurityHeaders, https=settings.app_base_url.startswith("https"))
 # The AR model files: Scene Viewer reads the glTF type, and iOS Quick Look needs the USDZ type to open the file.
-# WebP is listed too: slim server images have no mime.types file and would send it as text/plain.
+# WebP and woff2 are listed too: slim server images have no mime.types file and would send them as text/plain.
 mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("model/gltf-binary", ".glb")
 mimetypes.add_type("model/vnd.usdz+zip", ".usdz")
 app.mount("/static", StaticFiles(directory=str(HERE / "web" / "static")), name="static")
