@@ -11,7 +11,7 @@ Built for the PayPal AI Hackathon 2026. Sandbox only: no real money moves.
 | | |
 |---|---|
 | Live demo | https://billkind.140-245-16-129.sslip.io |
-| Demo video | https://youtu.be/dtZiq1pcscs |
+| Demo video | https://youtu.be/r1ihurQ-CI8 |
 | Video music | Music: "Light Thought var 1" Kevin MacLeod (incompetech.com)<br>Licensed under Creative Commons: By Attribution 4.0 License<br>http://creativecommons.org/licenses/by/4.0/ |
 | License | MIT |
 
